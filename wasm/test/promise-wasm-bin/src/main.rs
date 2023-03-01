@@ -192,3 +192,9 @@ fn test_rejected() {
         panic!("didn't reject");
     }
 }
+
+#[no_mangle]
+fn test_env_usage() {
+    let env = std::env::var("WASM_NODE_CONFIG");
+    println!("Hey {env}");
+}

@@ -469,3 +469,31 @@ async fn test_error_turns_into_rejection() {
     let value = runtime.host_adapter.db_get("foo").await.unwrap();
     assert!(value.is_none());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_multiple_env() {
+    set_env_vars();
+    let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
+    let wasm_binary = read_wasm_target("promise-wasm-bin");
+    let node_config = NodeConfigInner::test_config();
+    let memory_adapter = memory_adapter();
+    let mut runtime = Runtime::<RuntimeTestAdapter>::new(node_config, ChainConfigsInner::test_config(), false)
+        .await
+        .unwrap();
+    runtime.init(wasm_binary).unwrap();
+
+    let runtime_execution_result = runtime
+        .start_runtime(
+            VmConfig {
+                args:         vec!["hello world".to_string()],
+                program_name: "consensus".to_string(),
+                start_func:   Some("non_existing_function".to_string()),
+                debug:        true,
+            },
+            memory_adapter,
+            p2p_command_sender,
+        )
+        .await;
+
+    assert_eq!(runtime_execution_result.exit_info.exit_code, 5);
+}
