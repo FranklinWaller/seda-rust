@@ -78,8 +78,13 @@ impl TryFrom<String> for KeyPair {
 }
 
 impl KeyPair<Ed25519PrivateKey, Ed25519PublicKey> {
-    pub fn derive_ed25519<T: AsRef<Path>>(sk_path: T, index: usize) -> Result<Self> {
+    pub fn derive_ed25519_from_fs<T: AsRef<Path>>(sk_path: T, index: usize) -> Result<Self> {
         let seed = read_to_string(sk_path)?;
+
+        KeyPair::derive_ed25519(&seed, index)
+    }
+
+    pub fn derive_ed25519(seed: &str, index: usize) -> Result<Self> {
         let master_sk = derive_key::<sha2::Sha256>(seed.as_bytes(), b"ed25519", SECRET_KEY_LENGTH)?;
         let sk = derive_key::<sha2::Sha256>(master_sk.as_slice(), &index.to_ne_bytes(), SECRET_KEY_LENGTH)?;
         let private_key = Ed25519PrivateKey::from_bytes(sk.as_slice()).unwrap();

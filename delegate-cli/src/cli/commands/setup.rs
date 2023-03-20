@@ -2,7 +2,7 @@ use clap::Args;
 use seda_config::DelegateConfig;
 use seda_crypto::KeyPair;
 
-use super::{register::Register, stake::Stake, top_up::TopUp};
+use super::{register::Register, stake::Stake, top_up_near::TopUp};
 use crate::cli::errors::Result;
 
 #[derive(Debug, Args)]
@@ -10,9 +10,9 @@ pub struct Setup {
     /// The contract address to stake on
     pub delegation_contract_id: String,
 
-    #[clap(default_value_t = 5, short, long)]
+    #[clap(default_value_t = 5.0, short, long)]
     /// Amount of tokens to transfer in wholes (1 = 1 NEAR)
-    pub topup_amount: u64,
+    pub topup_amount: f64,
 
     #[clap(default_value_t = 32, short, long)]
     /// The amount of SEDA tokens to stake (1 = 1 SEDA)

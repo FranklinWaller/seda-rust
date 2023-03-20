@@ -26,7 +26,7 @@ fn generate_bn254_pair() {
 #[test]
 fn generate_ed25519_pair() {
     generate_test_sk();
-    let ed_pair = KeyPair::derive_ed25519(TEST_SK_PATH, 1).expect("Couldn't derive ed25519 key pair");
+    let ed_pair = KeyPair::derive_ed25519_from_fs(TEST_SK_PATH, 1).expect("Couldn't derive ed25519 key pair");
     let dalek_pair = Keypair::from_bytes(&[ed_pair.private_key.to_bytes(), ed_pair.public_key.to_bytes()].concat())
         .expect("Couldn't convert ed25519 keypair");
     let msg: &[u8] = b"awesome-seda";

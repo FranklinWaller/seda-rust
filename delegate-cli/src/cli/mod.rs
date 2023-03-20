@@ -24,13 +24,18 @@ pub struct CliOptions {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Top-up a target account by a given amount in NEAR
-    TopUp(commands::top_up::TopUp),
+    TopUp(commands::top_up_near::TopUp),
     /// Register a node to a delegation contract
     Register(commands::register::Register),
     /// Allows you to stake to a given delegator
     Stake(commands::stake::Stake),
+    /// Allows you to unstake your tokens
+    Unstake(commands::unstake::Unstake),
     /// A all in one command to get started as a node operator
     Setup(commands::setup::Setup),
+    /// Withdraws NEAR from your configured validator node to your configured
+    /// account
+    WithdrawNear(commands::withdraw_near::WithdrawNear),
 }
 
 impl Command {
@@ -46,8 +51,14 @@ impl Command {
             Self::Stake(stake) => {
                 stake.handle(config).await?;
             }
+            Self::Unstake(unstake) => {
+                unstake.handle(config).await?;
+            }
             Self::Setup(setup) => {
                 setup.handle(config).await?;
+            }
+            Self::WithdrawNear(withdraw_near) => {
+                withdraw_near.handle(config).await?;
             }
         }
 
