@@ -4857,6 +4857,7 @@ dependencies = [
  "reqwest",
  "seda-chains",
  "seda-config",
+ "seda-crypto",
  "seda-runtime-sdk",
  "serde",
  "serde_json",

@@ -27,3 +27,4 @@ wasmer-wasi = { workspace = true, features = ["host-fs", "sys"] }
 lazy_static = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+seda-crypto = { workspace = true }

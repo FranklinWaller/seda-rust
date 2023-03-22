@@ -1,7 +1,7 @@
 use clap::Args;
 use seda_runtime_sdk::{
     log,
-    wasm::{call_self, chain_call, chain_view, memory_read, memory_write, Promise, CONFIG},
+    wasm::{call_self, chain_call, chain_view, get_oracle_contract_id, memory_read, memory_write, Promise},
     Chain,
     FromBytes,
     Level,
@@ -46,7 +46,7 @@ fn bridge_step_1() {
             log!(Level::Debug, "Posting args: {args_string}");
             chain_call(
                 Chain::Near,
-                CONFIG.contract_account_id.as_str(), // TODO: Currently panics
+                get_oracle_contract_id().as_str(), // TODO: Currently panics
                 "post_data_request",
                 args_string.into_bytes(),
                 deposit,

@@ -16,7 +16,7 @@ mod raw;
 pub use call::*;
 #[cfg(feature = "full")]
 pub use chain_interactor::*;
-pub use config::CONFIG;
+pub use config::*;
 #[cfg(feature = "full")]
 pub use database::*;
 pub use execution::*;

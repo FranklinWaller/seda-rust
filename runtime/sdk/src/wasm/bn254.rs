@@ -27,25 +27,14 @@ pub fn bn254_verify(message: &[u8], signature: &Bn254Signature, public_key: &Bn2
     }
 }
 
-pub fn bn254_sign(message: &[u8], private_key: &Bn254PrivateKey) -> Bn254Signature {
+pub fn bn254_sign(message: &[u8]) -> Bn254Signature {
     let message_len = message.len() as i64;
-    let private_key_bytes = private_key.to_bytes().expect("Private key should be valid");
-    let private_key_length = private_key_bytes.len() as i64;
 
     // Compressed Signatures in G1 have a length of 33 bytes
     let value_len = 33;
     let mut result_data_ptr = vec![0; value_len as usize];
 
-    unsafe {
-        raw::bn254_sign(
-            message.as_ptr(),
-            message_len,
-            private_key_bytes.as_ptr(),
-            private_key_length,
-            result_data_ptr.as_mut_ptr(),
-            value_len,
-        )
-    };
+    unsafe { raw::bn254_sign(message.as_ptr(), message_len, result_data_ptr.as_mut_ptr(), value_len) };
 
     Bn254Signature::from_compressed(result_data_ptr).expect("Signature should be valid")
 }

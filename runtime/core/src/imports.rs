@@ -362,8 +362,6 @@ pub fn bn254_sign_import_obj(store: &Store, vm_context: VmContext) -> Function {
         env: &VmContext,
         message: WasmPtr<u8, Array>,
         message_length: i64,
-        private_key: WasmPtr<u8, Array>,
-        private_key_length: i64,
         result_data_ptr: WasmPtr<u8, Array>,
         result_data_length: i64,
     ) -> Result<()> {
@@ -374,14 +372,8 @@ pub fn bn254_sign_import_obj(store: &Store, vm_context: VmContext) -> Function {
             .ok_or("Invalid pointer")?;
         let message: Vec<u8> = message.into_iter().map(|wc| wc.get()).collect();
 
-        let private_key = private_key
-            .deref(memory_ref, 0, private_key_length as u32)
-            .ok_or("Invalid pointer")?;
-        let private_key: Vec<u8> = private_key.into_iter().map(|wc| wc.get()).collect();
-
         // `bn254` sign
-        let private_key_obj = bn254::PrivateKey::try_from(private_key.as_slice())?;
-        let signature = bn254::ECDSA::sign(&message, &private_key_obj)?;
+        let signature = bn254::ECDSA::sign(&message, &env.node_config.keypair_bn254.private_key)?;
         let result = signature.to_compressed()?;
 
         if result_data_length as usize != result.len() {

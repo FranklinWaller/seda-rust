@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
+use seda_config::NodeConfig;
 use wasmer::{HostEnvInitError, Instance, LazyInit, Memory, WasmerEnv};
 
 use super::PromiseQueue;
@@ -14,6 +15,7 @@ pub struct VmContext {
     pub shared_memory:         Arc<RwLock<InMemory>>,
     pub promise_queue:         Arc<Mutex<PromiseQueue>>,
     pub current_promise_queue: Arc<Mutex<PromiseQueue>>,
+    pub node_config:           NodeConfig,
 }
 
 impl WasmerEnv for VmContext {
@@ -31,6 +33,7 @@ impl VmContext {
         shared_memory: Arc<RwLock<InMemory>>,
         current_promise_queue: Arc<Mutex<PromiseQueue>>,
         promise_queue: Arc<Mutex<PromiseQueue>>,
+        node_config: NodeConfig,
     ) -> VmContext {
         VmContext {
             result: Arc::new(Mutex::new(Vec::new())),
@@ -39,6 +42,7 @@ impl VmContext {
             memory: LazyInit::new(),
             current_promise_queue,
             promise_queue,
+            node_config,
         }
     }
 }

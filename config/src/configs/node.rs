@@ -1,6 +1,9 @@
-use std::{path::PathBuf, sync::Arc};
+#[cfg(feature = "cli")]
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use seda_crypto::{Bn254KeyPair, Ed25519KeyPair, MasterKey};
+#[cfg(feature = "cli")]
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "cli")]
@@ -157,7 +160,7 @@ impl Config for PartialNodeConfig {
         env_overwrite!(self.master_key, "SEDA_SECRET_KEY");
     }
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct NodeConfigInner {
     pub deposit:                 u128,
     pub gas:                     u64,
@@ -172,8 +175,8 @@ pub struct NodeConfigInner {
 
 impl NodeConfigInner {
     // TODO cfg this
-    pub fn test_config() -> NodeConfig {
-        let master_key = MasterKey::random();
+    pub fn test_config(master_key: Option<MasterKey>) -> NodeConfig {
+        let master_key = master_key.unwrap_or_else(MasterKey::random);
 
         Arc::new(Self {
             deposit:                 Self::DEPOSIT,
@@ -186,11 +189,6 @@ impl NodeConfigInner {
             job_manager_interval_ms: Self::JOB_MANAGER_INTERVAL_MS,
             runtime_worker_threads:  Self::RUNTIME_WORKER_THREADS,
         })
-    }
-
-    pub fn from_json_str(s: &str) -> NodeConfig {
-        let this = serde_json::from_str(s).unwrap();
-        Arc::new(this)
     }
 }
 

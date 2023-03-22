@@ -25,12 +25,5 @@ extern "C" {
         public_key: *const u8,
         public_key_length: i64,
     ) -> u8;
-    pub fn bn254_sign(
-        message: *const u8,
-        message_length: i64,
-        private_key: *const u8,
-        private_key_length: i64,
-        result_data_ptr: *const u8,
-        result_data_length: i64,
-    );
+    pub fn bn254_sign(message: *const u8, message_length: i64, result_data_ptr: *const u8, result_data_length: i64);
 }

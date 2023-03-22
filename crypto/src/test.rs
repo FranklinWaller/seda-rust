@@ -51,13 +51,3 @@ fn master_key_from_hex_error_invalid() {
     let master_key = MasterKey::try_from(&mk_string);
     assert!(matches!(master_key, Err(CryptoError::FromHex(_))));
 }
-
-#[test]
-fn bn254_key_pairserialize() {
-    let master_key = MasterKey::random();
-    let bn254_keypair: Bn254KeyPair = master_key.derive_bn254(0).unwrap();
-    let keypair_string = serde_json::json!(bn254_keypair).to_string();
-    let deserialized_keypair = serde_json::from_str::<Bn254KeyPair>(&keypair_string).unwrap();
-    assert_eq!(bn254_keypair.private_key, deserialized_keypair.private_key);
-    assert_eq!(bn254_keypair.public_key, deserialized_keypair.public_key);
-}

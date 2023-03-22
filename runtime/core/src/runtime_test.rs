@@ -2,11 +2,14 @@ use std::{env, fs, path::PathBuf, sync::Arc};
 
 use parking_lot::{Mutex, RwLock};
 use seda_config::{ChainConfigsInner, NodeConfigInner};
+use seda_crypto::MasterKey;
 use seda_runtime_sdk::p2p::P2PCommand;
 use serde_json::json;
 use tokio::sync::mpsc;
 
 use crate::{test::RuntimeTestAdapter, HostAdapter, InMemory, MemoryAdapter, RunnableRuntime, Runtime, VmConfig};
+
+const TEST_MASTER_KEY: &str = "07bc2bbe42d68a80146c873963db1ac5801c7bd79221033b4ccc23cb70a09b28";
 
 fn read_wasm_target(file: &str) -> Vec<u8> {
     let mut path_prefix = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -28,12 +31,16 @@ fn shared_memory() -> Arc<RwLock<InMemory>> {
     Arc::new(RwLock::new(InMemory::default()))
 }
 
+fn master_key() -> MasterKey {
+    MasterKey::try_from(&TEST_MASTER_KEY.to_owned()).unwrap()
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_promise_queue_multiple_calls_with_external_traits() {
     set_env_vars();
     let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config();
+    let node_config = NodeConfigInner::test_config(Some(master_key()));
     let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
     let mut runtime =
@@ -55,6 +62,7 @@ async fn test_promise_queue_multiple_calls_with_external_traits() {
     );
 
     let vm_result = runtime_execution_result.await;
+    dbg!(&vm_result);
     assert_eq!(vm_result.exit_info.exit_code, 0);
     let value = runtime.host_adapter.db_get("test_value").await.unwrap();
 
@@ -67,7 +75,7 @@ async fn test_promise_queue_multiple_calls_with_external_traits() {
 async fn test_bad_wasm_file() {
     set_env_vars();
 
-    let node_config = NodeConfigInner::test_config();
+    let node_config = NodeConfigInner::test_config(Some(master_key()));
     let mut runtime =
         Runtime::<RuntimeTestAdapter>::new(node_config, ChainConfigsInner::test_config(), shared_memory(), false)
             .await
@@ -81,7 +89,7 @@ async fn test_non_existing_function() {
     set_env_vars();
     let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config();
+    let node_config = NodeConfigInner::test_config(Some(master_key()));
     let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
     let mut runtime =
@@ -113,7 +121,7 @@ async fn test_promise_queue_http_fetch() {
     let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
 
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config();
+    let node_config = NodeConfigInner::test_config(Some(master_key()));
     let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
     let mut runtime =
@@ -153,7 +161,7 @@ async fn test_promise_queue_http_fetch() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_memory_adapter() {
     set_env_vars();
-    let node_config = NodeConfigInner::test_config();
+    let node_config = NodeConfigInner::test_config(Some(master_key()));
     let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
     let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
@@ -202,7 +210,7 @@ async fn test_cli_demo_view_another_chain() {
     set_env_vars();
     let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
     let wasm_binary = read_wasm_target("demo-cli");
-    let node_config = NodeConfigInner::test_config();
+    let node_config = NodeConfigInner::test_config(Some(master_key()));
     let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
     let mut runtime =
@@ -246,7 +254,7 @@ async fn test_limited_runtime() {
     set_env_vars();
     let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config();
+    let node_config = NodeConfigInner::test_config(Some(master_key()));
     let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
     let mut runtime =
@@ -325,7 +333,7 @@ async fn test_bn254_verify_valid() {
     let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
 
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config();
+    let node_config = NodeConfigInner::test_config(Some(master_key()));
     let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
     let mut runtime =
@@ -371,7 +379,7 @@ async fn test_bn254_verify_invalid() {
     let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
 
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config();
+    let node_config = NodeConfigInner::test_config(Some(master_key()));
     let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
     let mut runtime =
@@ -417,7 +425,7 @@ async fn test_bn254_signature() {
     let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
 
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config();
+    let node_config = NodeConfigInner::test_config(Some(master_key()));
     let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
     let mut runtime =
@@ -452,7 +460,7 @@ async fn test_bn254_signature() {
     let result = db_result.unwrap();
 
     // Check if expected signature
-    let expected_signature = "020f047a153e94b5f109e4013d1bd078112817cf0d58cdf6ba8891f9849852ba5b";
+    let expected_signature = "03252a430535dfdf7c20713be125fbe3db4b9d5a38062cda01eb91a6611621049d";
     assert_eq!(result, format!("{}", expected_signature));
 }
 
@@ -461,7 +469,7 @@ async fn test_error_turns_into_rejection() {
     set_env_vars();
     let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config();
+    let node_config = NodeConfigInner::test_config(Some(master_key()));
     let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
     let mut runtime =
@@ -502,7 +510,7 @@ async fn test_shared_memory() {
     set_env_vars();
     let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config();
+    let node_config = NodeConfigInner::test_config(Some(master_key()));
     let shared_memory = shared_memory();
     let mut runtime = Runtime::<RuntimeTestAdapter>::new(
         node_config.clone(),

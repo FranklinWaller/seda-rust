@@ -17,7 +17,6 @@ use seda_runtime_sdk::{
         Bn254PublicKey,
         Bn254Signature,
         Promise,
-        CONFIG,
     },
     FromBytes,
     PromiseStatus,
@@ -25,7 +24,6 @@ use seda_runtime_sdk::{
 };
 
 fn main() {
-    println!("{:?}", &*CONFIG);
     let args: Vec<String> = env::args().collect();
 
     println!("Hello World {:?}", args);
@@ -156,7 +154,7 @@ fn bn254_sign_test() {
     let private_key_bytes = decode_hex(private_key_hex).unwrap();
     let private_key = Bn254PrivateKey::try_from(private_key_bytes.as_slice()).unwrap();
 
-    let result = bn254_sign(&message, &private_key);
+    let result = bn254_sign(&message);
     let result_hex = encode_hex(&result.to_compressed().unwrap());
     db_set("bn254_sign_result", &result_hex).start();
 }

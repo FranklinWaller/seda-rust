@@ -129,11 +129,7 @@ impl<HA: HostAdapter> RunnableRuntime for Runtime<HA> {
                         let stderr_pipe = Pipe::new();
 
                         let mut wasi_env = WasiState::new(&call_action.function_name)
-                            .env(
-                                "WASM_NODE_CONFIG",
-                                serde_json::to_string(&self.node_config)
-                                    .map_err(|_| VmResultStatus::FailedToSetConfig)?,
-                            )
+                            .env("ORACLE_CONTRACT_ID", &self.node_config.contract_account_id)
                             .args(call_action.args.clone())
                             .stdout(Box::new(stdout_pipe))
                             .stderr(Box::new(stderr_pipe))
@@ -148,6 +144,7 @@ impl<HA: HostAdapter> RunnableRuntime for Runtime<HA> {
                             self.shared_memory.clone(),
                             current_promise_queue,
                             next_queue.clone(),
+                            self.node_config.clone(),
                         );
 
                         let imports = create_wasm_imports(&wasm_store, vm_context.clone(), &mut wasi_env, wasm_module)
