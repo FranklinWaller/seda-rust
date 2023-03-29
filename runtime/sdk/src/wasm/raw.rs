@@ -9,6 +9,7 @@ extern "C" {
     pub fn shared_memory_read_length(key: *const u8, key_length: i64) -> i64;
     pub fn shared_memory_write(key: *const u8, key_length: i64, value: *const u8, value_length: i64);
     pub fn execution_result(result: *const u8, result_length: i32);
+    pub fn http_fetch();
     pub fn _log(
         level: *const u8,
         level_len: i32,

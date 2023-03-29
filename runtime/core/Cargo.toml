@@ -5,23 +5,23 @@ edition = "2021"
 rust-version.workspace = true
 
 [dependencies]
-bn254 = { workspace = true }
 async-trait = { workspace = true }
+bn254 = { workspace = true }
 futures = { workspace = true, features = ["executor"] }
 parking_lot = { workspace = true }
+reqwest = { workspace = true }
 seda-chains = { workspace = true }
 seda-config = { workspace = true }
 seda-runtime-sdk = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tracing = { workspace = true }
 tokio = { workspace = true }
-wasmer = { workspace = true, features = [
-	"default-cranelift",
-	"default-universal",
-] }
-wasmer-wasi = { workspace = true, features = ["host-fs", "sys"] }
+tracing = { workspace = true }
+wasmer = { workspace = true }
+wasmer-cache = { workspace = true }
+wasmer-wasix = { workspace = true }
+
 
 [dev-dependencies]
 lazy_static = { workspace = true }

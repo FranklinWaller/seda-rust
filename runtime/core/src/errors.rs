@@ -4,7 +4,7 @@ use seda_runtime_sdk::{p2p::P2PCommand, SDKError};
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 use wasmer::{CompileError, ExportError, InstantiationError};
-use wasmer_wasi::{FsError, WasiError, WasiStateCreationError};
+use wasmer_wasix::{FsError, WasiError, WasiStateCreationError};
 
 #[derive(Debug, Error)]
 pub enum RuntimeError {
@@ -56,6 +56,9 @@ pub enum RuntimeError {
 
     #[error("SDK Error: {0}")]
     SDKError(#[from] SDKError),
+
+    #[error(transparent)]
+    MemoryAccessError(#[from] wasmer::MemoryAccessError),
 }
 
 impl From<InstantiationError> for RuntimeError {

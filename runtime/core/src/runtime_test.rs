@@ -497,7 +497,7 @@ async fn test_error_turns_into_rejection() {
     assert!(value.is_none());
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn test_shared_memory() {
     set_env_vars();
     let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
@@ -527,6 +527,7 @@ async fn test_shared_memory() {
     );
 
     let vm_result = runtime_execution_result.await;
+    dbg!(&vm_result);
     assert_eq!(vm_result.exit_info.exit_code, 0);
 
     let mut runtime =

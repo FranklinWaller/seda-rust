@@ -12,7 +12,7 @@ pub use errors::*;
 
 // Standard config location for unix apps.
 #[cfg(target_family = "unix")]
-pub const FULL_CONFIG_PATH: &str = "/etc/seda-rust/config.toml";
+pub const FULL_CONFIG_PATH: &str = "./config.toml";
 // Standard config location for windows apps.
 #[cfg(target_family = "windows")]
 pub const FULL_CONFIG_PATH: &str = "C:\\ProgramData\\seda-rust\\config.toml";
