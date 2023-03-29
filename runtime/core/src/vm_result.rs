@@ -38,7 +38,7 @@ pub enum VmResultStatus {
     /// When the host functions could not be exported to the VM
     FailedToCreateVMImports,
     /// When the WASMER instance could not be created
-    FailedToCreateWasmerInstance,
+    FailedToCreateWasmerInstance(String),
     /// When a function from the WASM VM does not exist
     FailedToGetWASMFn,
     /// When we fail to fetch the WASM VM stdout
@@ -49,6 +49,8 @@ pub enum VmResultStatus {
     FailedToConvertVMPipeToString,
     /// An execution error from the WASM Runtime
     ExecutionError(String),
+    /// When we fail to get the memory export
+    FailedToGetWASMMemory,
 }
 
 impl From<VmResultStatus> for ExitInfo {
@@ -59,8 +61,8 @@ impl From<VmResultStatus> for ExitInfo {
             VmResultStatus::FailedToSetConfig => ("Error: Failed to set VM Config".into(), 1).into(),
             VmResultStatus::WasiEnvInitializeFailure => ("Error: Failed to initialize Wasi Env".into(), 2).into(),
             VmResultStatus::FailedToCreateVMImports => ("Error: Failed to create host imports for VM".into(), 3).into(),
-            VmResultStatus::FailedToCreateWasmerInstance => {
-                ("Error: Failed to create WASMER instance".into(), 4).into()
+            VmResultStatus::FailedToCreateWasmerInstance(msg) => {
+                (format!("Error: Failed to create WASMER instance: {msg}"), 4).into()
             }
             VmResultStatus::FailedToGetWASMFn => {
                 ("Error: Failed to find specified function in WASM binary".into(), 5).into()
@@ -71,6 +73,7 @@ impl From<VmResultStatus> for ExitInfo {
                 ("Error: Failed to convert VM pipe output to String".into(), 8).into()
             }
             VmResultStatus::ExecutionError(err) => (format!("Execution Error: {err}"), 8).into(),
+            VmResultStatus::FailedToGetWASMMemory => ("Error: Failed to get memory export from WASM".into(), 9).into(),
         }
     }
 }

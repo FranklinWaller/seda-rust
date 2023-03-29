@@ -2,47 +2,77 @@ use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
 use seda_config::NodeConfig;
-use wasmer::{HostEnvInitError, Instance, LazyInit, Memory, WasmerEnv};
+use seda_runtime_sdk::p2p::P2PCommand;
+use tokio::sync::mpsc::Sender;
+use wasmer::{AsStoreRef, FunctionEnv, Memory, MemoryView, Store};
+use wasmer_wasix::WasiEnv;
 
 use super::PromiseQueue;
-use crate::InMemory;
+use crate::{HostAdapter, InMemory};
 
 #[derive(Clone)]
-pub struct VmContext {
-    pub result:                Arc<Mutex<Vec<u8>>>,
-    pub memory:                LazyInit<Memory>,
-    pub memory_adapter:        Arc<Mutex<InMemory>>,
-    pub shared_memory:         Arc<RwLock<InMemory>>,
-    pub promise_queue:         Arc<Mutex<PromiseQueue>>,
-    pub current_promise_queue: Arc<Mutex<PromiseQueue>>,
-    pub node_config:           NodeConfig,
+pub struct VmContext<HA: HostAdapter> {
+    pub result:                     Arc<Mutex<Vec<u8>>>,
+    pub memory:                     Option<Memory>,
+    pub memory_adapter:             Arc<Mutex<InMemory>>,
+    pub shared_memory:              Arc<RwLock<InMemory>>,
+    pub promise_queue:              Arc<Mutex<PromiseQueue>>,
+    pub current_promise_queue:      Arc<Mutex<PromiseQueue>>,
+    pub wasi_env:                   FunctionEnv<WasiEnv>,
+    pub adapter:                    HA,
+    pub node_config:                NodeConfig,
+    pub p2p_command_sender_channel: Sender<P2PCommand>,
+
+    /// Used for internal use only
+    /// This is used to temp store a result of an action
+    /// For ex doing a http fetch is 3 calls (action, get_length, write_result)
+    /// Between actions we need this result value, so instead of doing the
+    /// action multiple times We temp store the value for later use.
+    /// NOTE: It's pretty unsafe if it's not being used correctly. Since our SDK
+    /// use these 3 calls in sequental we are fine, but it could crash if the
+    /// order changes.
+    pub call_result_value: Arc<RwLock<Vec<u8>>>,
 }
 
-impl WasmerEnv for VmContext {
-    fn init_with_instance(&mut self, instance: &Instance) -> Result<(), HostEnvInitError> {
-        let memory: Memory = instance.exports.get_with_generics_weak("memory")?;
-        self.memory.initialize(memory);
-
-        Ok(())
-    }
-}
-
-impl VmContext {
+impl<HA: HostAdapter> VmContext<HA> {
+    #[allow(clippy::too_many_arguments)]
     pub fn create_vm_context(
+        store: &mut Store,
         memory_adapter: Arc<Mutex<InMemory>>,
         shared_memory: Arc<RwLock<InMemory>>,
         current_promise_queue: Arc<Mutex<PromiseQueue>>,
         promise_queue: Arc<Mutex<PromiseQueue>>,
+        wasi_env: FunctionEnv<WasiEnv>,
+        adapter: HA,
+        p2p_command_sender_channel: Sender<P2PCommand>,
         node_config: NodeConfig,
-    ) -> VmContext {
-        VmContext {
-            result: Arc::new(Mutex::new(Vec::new())),
-            memory_adapter,
-            shared_memory,
-            memory: LazyInit::new(),
-            current_promise_queue,
-            promise_queue,
-            node_config,
-        }
+    ) -> FunctionEnv<VmContext<HA>> {
+        FunctionEnv::new(
+            store,
+            VmContext {
+                result: Arc::new(Mutex::new(Vec::new())),
+                memory_adapter,
+                shared_memory,
+                memory: None,
+                current_promise_queue,
+                promise_queue,
+                wasi_env,
+                adapter,
+                call_result_value: Arc::new(RwLock::new(Vec::new())),
+                p2p_command_sender_channel,
+                node_config,
+            },
+        )
+    }
+
+    /// Provides safe access to the memory
+    /// (it must be initialized before it can be used)
+    pub fn memory_view<'a>(&'a self, store: &'a impl AsStoreRef) -> MemoryView<'a> {
+        self.memory().view(store)
+    }
+
+    /// Get memory, that needs to have been set fist
+    pub fn memory(&self) -> &Memory {
+        self.memory.as_ref().unwrap()
     }
 }

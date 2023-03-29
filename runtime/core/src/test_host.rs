@@ -14,6 +14,7 @@ lazy_static! {
 
 }
 
+#[derive(Clone)]
 pub struct RuntimeTestAdapter {
     pub another_client: Client,
     pub near_client:    Client,

@@ -99,6 +99,7 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", default-features = false }
 uint = { version = "0.8", default-features = false }
 url = { version = "2.3", default-features = false }
-wasmer = { version = "2.3", default-features = false }
-wasmer-wasi = { version = "2.3", default-features = false }
+wasmer = { git = "https://github.com/wasmerio/wasmer.git", rev = "82974aca26b7d0a0a6f19f62a39a1d2ad07bdfad", default-features = true }
+wasmer-wasix = { git = "https://github.com/wasmerio/wasmer.git", rev = "82974aca26b7d0a0a6f19f62a39a1d2ad07bdfad", default-features = true }
+wasmer-cache = { git = "https://github.com/wasmerio/wasmer.git", rev = "82974aca26b7d0a0a6f19f62a39a1d2ad07bdfad", default-features = true }
 workspaces = "0.7"

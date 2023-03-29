@@ -10,6 +10,17 @@ extern "C" {
     pub fn shared_memory_read_length(key: *const u8, key_length: i64) -> i64;
     pub fn shared_memory_write(key: *const u8, key_length: i64, value: *const u8, value_length: i64);
     pub fn execution_result(result: *const u8, result_length: i32);
+
+    // Call actions
+    pub fn http_fetch(action: *const u8, action_length: u32) -> u32;
+    pub fn chain_view(action: *const u8, action_length: u32) -> u32;
+    pub fn chain_call(action: *const u8, action_length: u32) -> u32;
+    pub fn p2p_broadcast(action: *const u8, action_length: u32);
+
+    // Reading call actions result
+    pub fn call_result_write(result: *const u8, result_length: u32);
+    pub fn call_result_length() -> u32;
+
     pub fn _log(
         level: *const u8,
         level_len: i32,

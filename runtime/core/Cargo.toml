@@ -10,6 +10,7 @@ bn254 = { workspace = true }
 futures = { workspace = true, features = ["executor"] }
 hex = { workspace = true }
 parking_lot = { workspace = true }
+reqwest = { workspace = true }
 seda-chains = { workspace = true }
 seda-config = { workspace = true }
 seda-runtime-sdk = { workspace = true }
@@ -18,11 +19,10 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-wasmer = { workspace = true, features = [
-	"default-cranelift",
-	"default-universal",
-] }
-wasmer-wasi = { workspace = true, features = ["host-fs", "sys"] }
+wasmer = { workspace = true }
+wasmer-cache = { workspace = true }
+wasmer-wasix = { workspace = true }
+
 
 [dev-dependencies]
 lazy_static = { workspace = true }

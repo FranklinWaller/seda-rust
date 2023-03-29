@@ -7,6 +7,7 @@ use seda_runtime_sdk::{events::Event, Chain};
 use crate::{ChainCall, ChainView, DatabaseGet, DatabaseSet, Host, HttpFetch, NodeError, Result, TriggerEvent};
 
 /// A communication layer between Actix and the runtime
+#[derive(Clone)]
 pub struct RuntimeAdapter {
     pub chains_config:  ChainConfigs,
     pub another_client: Client,

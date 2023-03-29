@@ -6,7 +6,7 @@ use seda_runtime_sdk::{p2p::P2PCommand, CallSelfAction, FromBytes, Promise, Prom
 use tokio::sync::mpsc::Sender;
 use tracing::info;
 use wasmer::{Instance, Module, Store};
-use wasmer_wasi::{Pipe, WasiState};
+use wasmer_wasix::{Pipe, WasiEnv};
 
 use super::{imports::create_wasm_imports, PromiseQueue, Result, VmConfig, VmContext};
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct Runtime<HA: HostAdapter> {
-    wasm_module:       Option<Module>,
+    wasm_binary:       Option<Vec<u8>>,
     limited:           bool,
     pub host_adapter:  HA,
     pub node_config:   NodeConfig,
@@ -40,7 +40,6 @@ pub trait RunnableRuntime {
     #[allow(clippy::too_many_arguments)]
     async fn execute_promise_queue(
         &self,
-        wasm_module: &Module,
         memory_adapter: Arc<Mutex<InMemory>>,
         promise_queue: PromiseQueue,
         stdout: &mut Vec<String>,
@@ -69,7 +68,7 @@ impl<HA: HostAdapter> RunnableRuntime for Runtime<HA> {
         limited: bool,
     ) -> Result<Self> {
         Ok(Self {
-            wasm_module: None,
+            wasm_binary: None,
             limited,
             host_adapter: HA::new(chains_config)
                 .await
@@ -82,17 +81,13 @@ impl<HA: HostAdapter> RunnableRuntime for Runtime<HA> {
     /// Initializes the runtime, this speeds up VM execution by caching WASM
     /// binary parsing
     fn init(&mut self, wasm_binary: Vec<u8>) -> Result<()> {
-        let wasm_store = Store::default();
-        let wasm_module = Module::new(&wasm_store, wasm_binary)?;
-
-        self.wasm_module = Some(wasm_module);
+        self.wasm_binary = Some(wasm_binary);
 
         Ok(())
     }
 
     async fn execute_promise_queue(
         &self,
-        wasm_module: &Module,
         memory_adapter: Arc<Mutex<InMemory>>,
         promise_queue: PromiseQueue,
         stdout: &mut Vec<String>,
@@ -123,13 +118,18 @@ impl<HA: HostAdapter> RunnableRuntime for Runtime<HA> {
                     // TODO need an ok_or type situation here. if its ok continue otherwise reject
                     // promise? or maybe it should return a VMResult. Might hold off on this till the VMResult changes.
                     PromiseAction::CallSelf(call_action) => {
-                        let wasm_store = Store::default();
+                        let mut wasm_store = Store::default();
 
-                        let stdout_pipe = Pipe::new();
-                        let stderr_pipe = Pipe::new();
+                        // TODO: Replace this with the wasmer_cache
+                        let wasm_module = unsafe {
+                            Module::from_binary_unchecked(&wasm_store, self.wasm_binary.as_ref().unwrap()).unwrap()
+                        };
 
                         // TODO: For some reason a second run does not include any env variables
-                        let mut wasi_env = WasiState::new(&call_action.function_name)
+                        let (stdout_tx, mut stdout_rx) = Pipe::channel();
+                        let (stderr_tx, mut stderr_rx) = Pipe::channel();
+
+                        let mut wasi_env = WasiEnv::builder(&call_action.function_name)
                             .env("ORACLE_CONTRACT_ID", &self.node_config.contract_account_id)
                             .env(
                                 "ED25519_PUBLIC_KEY",
@@ -140,57 +140,69 @@ impl<HA: HostAdapter> RunnableRuntime for Runtime<HA> {
                                 hex::encode(&self.node_config.keypair_bn254.public_key.to_uncompressed().unwrap()),
                             )
                             .args(call_action.args.clone())
-                            .stdout(Box::new(stdout_pipe))
-                            .stderr(Box::new(stderr_pipe))
-                            .finalize()
+                            .stdout(Box::new(stdout_tx))
+                            .stderr(Box::new(stderr_tx))
+                            .finalize(&mut wasm_store)
                             .map_err(|_| VmResultStatus::WasiEnvInitializeFailure)?;
 
                         let current_promise_queue = Arc::new(Mutex::new(promise_queue_mut.clone()));
                         let next_queue = Arc::new(Mutex::new(PromiseQueue::new()));
 
-                        let vm_context = VmContext::create_vm_context(
+                        let vm_context = VmContext::<HA>::create_vm_context(
+                            &mut wasm_store,
                             memory_adapter.clone(),
                             self.shared_memory.clone(),
                             current_promise_queue,
                             next_queue.clone(),
+                            wasi_env.env.clone(),
+                            self.host_adapter.clone(),
+                            p2p_command_sender_channel.clone(),
                             self.node_config.clone(),
                         );
 
-                        let imports = create_wasm_imports(&wasm_store, vm_context.clone(), &mut wasi_env, wasm_module)
-                            .map_err(|_| VmResultStatus::FailedToCreateVMImports)?;
-                        let wasmer_instance = Instance::new(wasm_module, &imports)
-                            .map_err(|_| VmResultStatus::FailedToCreateWasmerInstance)?;
+                        let imports =
+                            create_wasm_imports(&mut wasm_store, vm_context.clone(), &mut wasi_env, &wasm_module)
+                                .map_err(|_| VmResultStatus::FailedToCreateVMImports)?;
+
+                        let wasmer_instance = Instance::new(&mut wasm_store, &wasm_module, &imports)
+                            .map_err(|e| VmResultStatus::FailedToCreateWasmerInstance(e.to_string()))?;
+
+                        let mut env_mut = vm_context.as_mut(&mut wasm_store);
+                        env_mut.memory = Some(
+                            wasmer_instance
+                                .exports
+                                .get_memory("memory")
+                                .map_err(|_| VmResultStatus::FailedToGetWASMMemory)?
+                                .clone(),
+                        );
+
+                        wasi_env
+                            .initialize(&mut wasm_store, wasmer_instance.clone())
+                            .map_err(|_| VmResultStatus::FailedToGetWASMFn)?;
+
                         let main_func = wasmer_instance
                             .exports
                             .get_function(&call_action.function_name)
                             .map_err(|_| VmResultStatus::FailedToGetWASMFn)?;
-                        let runtime_result = main_func.call(&[]);
 
-                        let mut wasi_state = wasi_env.state();
-                        let wasi_stdout = wasi_state
-                            .fs
-                            .stdout_mut()
-                            .map_err(|_| VmResultStatus::FailedToGetWASMStdout)?
-                            .as_mut()
-                            .unwrap();
+                        let runtime_result = main_func.call(&mut wasm_store, &[]);
+
+                        wasi_env.cleanup(&mut wasm_store, None);
+
                         let mut stdout_buffer = String::new();
-                        wasi_stdout
+                        stdout_rx
                             .read_to_string(&mut stdout_buffer)
                             .map_err(|_| VmResultStatus::FailedToConvertVMPipeToString)?;
+
                         if !stdout_buffer.is_empty() {
                             stdout.push(stdout_buffer);
                         }
 
-                        let wasi_stderr = wasi_state
-                            .fs
-                            .stderr_mut()
-                            .map_err(|_| VmResultStatus::FailedToGetWASMStderr)?
-                            .as_mut()
-                            .unwrap();
                         let mut stderr_buffer = String::new();
-                        wasi_stderr
+                        stderr_rx
                             .read_to_string(&mut stderr_buffer)
                             .map_err(|_| VmResultStatus::FailedToGetWASMStderr)?;
+
                         if !stderr_buffer.is_empty() {
                             stderr.push(stderr_buffer);
                         }
@@ -200,7 +212,8 @@ impl<HA: HostAdapter> RunnableRuntime for Runtime<HA> {
                             return VmResultStatus::ExecutionError(err.to_string()).into();
                         }
 
-                        let execution_result = vm_context.result.lock();
+                        let execution_result = vm_context.as_ref(&wasm_store).result.lock();
+
                         next_promise_queue = next_queue.lock().clone();
                         promise_queue_mut.queue[index].status =
                             PromiseStatus::Fulfilled(Some(execution_result.clone()));
@@ -271,7 +284,6 @@ impl<HA: HostAdapter> RunnableRuntime for Runtime<HA> {
         promise_queue_trace.push(promise_queue_mut.clone());
 
         let res = self.execute_promise_queue(
-            wasm_module,
             memory_adapter,
             next_promise_queue,
             stdout,
@@ -290,7 +302,6 @@ impl<HA: HostAdapter> RunnableRuntime for Runtime<HA> {
         p2p_command_sender_channel: Sender<P2PCommand>,
     ) -> VmResult {
         let function_name = config.clone().start_func.unwrap_or_else(|| "_start".to_string());
-        let wasm_module = self.wasm_module.as_ref().unwrap();
 
         let mut promise_queue_trace: Vec<PromiseQueue> = Vec::new();
         let mut promise_queue = PromiseQueue::new();
@@ -308,7 +319,6 @@ impl<HA: HostAdapter> RunnableRuntime for Runtime<HA> {
 
         let exit_info: ExitInfo = self
             .execute_promise_queue(
-                wasm_module,
                 memory_adapter,
                 promise_queue,
                 &mut stdout,
