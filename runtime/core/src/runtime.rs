@@ -215,6 +215,7 @@ impl<HA: HostAdapter> RunnableRuntime for Runtime<HA> {
                         let execution_result = vm_context.as_ref(&wasm_store).result.lock();
 
                         next_promise_queue = next_queue.lock().clone();
+                        dbg!(&next_promise_queue);
                         promise_queue_mut.queue[index].status =
                             PromiseStatus::Fulfilled(Some(execution_result.clone()));
                     }

@@ -559,6 +559,7 @@ async fn test_shared_memory() {
     );
 
     let vm_result = runtime_execution_result.await;
+    dbg!(&vm_result);
     assert_eq!(vm_result.exit_info.exit_code, 0);
 
     let mut runtime =
