@@ -2,363 +2,203 @@ use std::{io::Read, sync::Arc};
 
 use parking_lot::{Mutex, RwLock};
 use seda_config::{ChainConfigs, NodeConfig};
-use seda_runtime_sdk::{p2p::P2PCommand, CallSelfAction, FromBytes, Promise, PromiseAction, PromiseStatus};
+use seda_runtime_sdk::{p2p::P2PCommand, CallSelfAction};
 use tokio::sync::mpsc::Sender;
 use tracing::info;
 use wasmer::{Instance, Module, Store};
+use wasmer_cache::{Cache, FileSystemCache, Hash};
 use wasmer_wasix::{Pipe, WasiEnv};
 
-use super::{imports::create_wasm_imports, PromiseQueue, Result, VmConfig, VmContext};
+use super::{imports::create_wasm_imports, Result, VmConfig, VmContext};
 use crate::{
-    vm_result::{ExecutionResult, ExitInfo, VmResult, VmResultStatus},
+    vm_result::{ExecutionResult, VmResult, VmResultStatus},
     HostAdapter,
     InMemory,
     RuntimeError,
 };
 
-#[derive(Clone)]
 pub struct Runtime<HA: HostAdapter> {
-    wasm_binary:       Option<Vec<u8>>,
+    // TODO: Remove and replace this with the new limited runtime (SEDA-306)
+    #[allow(dead_code)]
     limited:           bool,
     pub host_adapter:  HA,
     pub node_config:   NodeConfig,
     pub shared_memory: Arc<RwLock<InMemory>>,
+    pub wasm_store:    Store,
+    /// Cached version of the WASM module to speed up execution
+    wasm_module:       Option<Module>,
 }
 
-#[async_trait::async_trait]
-pub trait RunnableRuntime {
-    async fn new(
-        node_config: NodeConfig,
-        chains_config: ChainConfigs,
-        shared_memory: Arc<RwLock<InMemory>>,
-        limited: bool,
-    ) -> Result<Self>
-    where
-        Self: Sized;
-    fn init(&mut self, wasm_binary: Vec<u8>) -> Result<()>;
-
-    #[allow(clippy::too_many_arguments)]
-    async fn execute_promise_queue(
-        &self,
-        memory_adapter: Arc<Mutex<InMemory>>,
-        promise_queue: PromiseQueue,
-        stdout: &mut Vec<String>,
-        stderr: &mut Vec<String>,
-        // Getting the results of all the promise queues
-        // Used to get the result of the last execution (for JSON RPC)
-        // Can also be used to debug the queue
-        promise_queue_trace: &mut Vec<PromiseQueue>,
-        p2p_command_sender_channel: Sender<P2PCommand>,
-    ) -> ExecutionResult;
-
-    async fn start_runtime(
-        &self,
-        config: VmConfig,
-        memory_adapter: Arc<Mutex<InMemory>>,
-        p2p_command_sender_channel: Sender<P2PCommand>,
-    ) -> VmResult;
-}
-
-#[async_trait::async_trait]
-impl<HA: HostAdapter> RunnableRuntime for Runtime<HA> {
-    async fn new(
+impl<HA: HostAdapter> Runtime<HA> {
+    pub fn new(
         node_config: NodeConfig,
         chains_config: ChainConfigs,
         shared_memory: Arc<RwLock<InMemory>>,
         limited: bool,
     ) -> Result<Self> {
         Ok(Self {
-            wasm_binary: None,
             limited,
-            host_adapter: HA::new(chains_config)
-                .await
-                .map_err(|e| RuntimeError::NodeError(e.to_string()))?,
+            host_adapter: HA::new(chains_config).map_err(|e| RuntimeError::NodeError(e.to_string()))?,
             node_config,
             shared_memory,
+            wasm_store: Store::default(),
+            wasm_module: None,
         })
     }
 
     /// Initializes the runtime, this speeds up VM execution by caching WASM
     /// binary parsing
-    fn init(&mut self, wasm_binary: Vec<u8>) -> Result<()> {
-        self.wasm_binary = Some(wasm_binary);
+    pub fn init(&mut self, wasm_binary: Vec<u8>) -> Result<()> {
+        let mut fs_cache = FileSystemCache::new(self.node_config.wasm_cache_path.clone())?;
+        let hash = Hash::generate(&wasm_binary);
+
+        let module_cache_result = unsafe { fs_cache.load(&self.wasm_store, hash) };
+
+        match module_cache_result {
+            Ok(module) => self.wasm_module = Some(module),
+            Err(_) => {
+                let module = Module::new(&self.wasm_store, wasm_binary)?;
+                fs_cache
+                    .store(hash, &module)
+                    .map_err(|err| RuntimeError::NodeError(err.to_string()))?;
+                self.wasm_module = Some(module);
+            }
+        }
 
         Ok(())
     }
 
-    async fn execute_promise_queue(
-        &self,
+    fn execute_vm(
+        &mut self,
+        call_action: CallSelfAction,
         memory_adapter: Arc<Mutex<InMemory>>,
-        promise_queue: PromiseQueue,
         stdout: &mut Vec<String>,
         stderr: &mut Vec<String>,
-        promise_queue_trace: &mut Vec<PromiseQueue>,
         p2p_command_sender_channel: Sender<P2PCommand>,
-    ) -> ExecutionResult {
-        let mut next_promise_queue = PromiseQueue::new();
-        let mut promise_queue_mut = promise_queue.clone();
+    ) -> ExecutionResult<Vec<u8>> {
+        let wasm_module = self.wasm_module.as_ref().expect("Runtime was not initialized");
 
-        {
-            // This queue will be used in the current execution
-            // We should not use the same promise_queue otherwise getting results back would
-            // be hard to do due the indexes of results (will be hard to refactor)
-            if promise_queue.queue.is_empty() {
-                return VmResultStatus::EmptyQueue.into();
-            }
+        let (stdout_tx, mut stdout_rx) = Pipe::channel();
+        let (stderr_tx, mut stderr_rx) = Pipe::channel();
 
-            for index in 0..promise_queue.queue.len() {
-                promise_queue_mut.queue[index].status = PromiseStatus::Pending;
+        let mut wasi_env = WasiEnv::builder(&call_action.function_name)
+            .env("ORACLE_CONTRACT_ID", &self.node_config.contract_account_id)
+            .env(
+                "ED25519_PUBLIC_KEY",
+                hex::encode(self.node_config.keypair_ed25519.public_key.to_bytes()),
+            )
+            .env(
+                "BN254_PUBLIC_KEY",
+                hex::encode(&self.node_config.keypair_bn254.public_key.to_uncompressed().unwrap()),
+            )
+            .args(call_action.args.clone())
+            .stdout(Box::new(stdout_tx))
+            .stderr(Box::new(stderr_tx))
+            .finalize(&mut wasm_store)
+            .map_err(|_| VmResultStatus::WasiEnvInitializeFailure)?;
 
-                match &promise_queue.queue[index].action {
-                    action if self.limited && action.is_limited_action() => {
-                        promise_queue_mut.queue[index].status = PromiseStatus::Rejected(
-                            format!("Method `{action}` not allowed in limited runtime").into_bytes(),
-                        )
-                    }
-                    // TODO need an ok_or type situation here. if its ok continue otherwise reject
-                    // promise? or maybe it should return a VMResult. Might hold off on this till the VMResult changes.
-                    PromiseAction::CallSelf(call_action) => {
-                        let mut wasm_store = Store::default();
-
-                        // TODO: Replace this with the wasmer_cache
-                        let wasm_module = unsafe {
-                            Module::from_binary_unchecked(&wasm_store, self.wasm_binary.as_ref().unwrap()).unwrap()
-                        };
-
-                        // TODO: For some reason a second run does not include any env variables
-                        let (stdout_tx, mut stdout_rx) = Pipe::channel();
-                        let (stderr_tx, mut stderr_rx) = Pipe::channel();
-
-                        let mut wasi_env = WasiEnv::builder(&call_action.function_name)
-                            .env("ORACLE_CONTRACT_ID", &self.node_config.contract_account_id)
-                            .env(
-                                "ED25519_PUBLIC_KEY",
-                                hex::encode(self.node_config.keypair_ed25519.public_key.to_bytes()),
-                            )
-                            .env(
-                                "BN254_PUBLIC_KEY",
-                                hex::encode(&self.node_config.keypair_bn254.public_key.to_uncompressed().unwrap()),
-                            )
-                            .args(call_action.args.clone())
-                            .stdout(Box::new(stdout_tx))
-                            .stderr(Box::new(stderr_tx))
-                            .finalize(&mut wasm_store)
-                            .map_err(|_| VmResultStatus::WasiEnvInitializeFailure)?;
-
-                        let current_promise_queue = Arc::new(Mutex::new(promise_queue_mut.clone()));
-                        let next_queue = Arc::new(Mutex::new(PromiseQueue::new()));
-
-                        let vm_context = VmContext::<HA>::create_vm_context(
-                            &mut wasm_store,
-                            memory_adapter.clone(),
-                            self.shared_memory.clone(),
-                            current_promise_queue,
-                            next_queue.clone(),
-                            wasi_env.env.clone(),
-                            self.host_adapter.clone(),
-                            p2p_command_sender_channel.clone(),
-                            self.node_config.clone(),
-                        );
-
-                        let imports =
-                            create_wasm_imports(&mut wasm_store, vm_context.clone(), &mut wasi_env, &wasm_module)
-                                .map_err(|_| VmResultStatus::FailedToCreateVMImports)?;
-
-                        let wasmer_instance = Instance::new(&mut wasm_store, &wasm_module, &imports)
-                            .map_err(|e| VmResultStatus::FailedToCreateWasmerInstance(e.to_string()))?;
-
-                        let mut env_mut = vm_context.as_mut(&mut wasm_store);
-                        env_mut.memory = Some(
-                            wasmer_instance
-                                .exports
-                                .get_memory("memory")
-                                .map_err(|_| VmResultStatus::FailedToGetWASMMemory)?
-                                .clone(),
-                        );
-
-                        wasi_env
-                            .initialize(&mut wasm_store, wasmer_instance.clone())
-                            .map_err(|_| VmResultStatus::FailedToGetWASMFn)?;
-
-                        let main_func = wasmer_instance
-                            .exports
-                            .get_function(&call_action.function_name)
-                            .map_err(|_| VmResultStatus::FailedToGetWASMFn)?;
-
-                        let runtime_result = main_func.call(&mut wasm_store, &[]);
-
-                        wasi_env.cleanup(&mut wasm_store, None);
-
-                        let mut stdout_buffer = String::new();
-                        stdout_rx
-                            .read_to_string(&mut stdout_buffer)
-                            .map_err(|_| VmResultStatus::FailedToConvertVMPipeToString)?;
-
-                        if !stdout_buffer.is_empty() {
-                            stdout.push(stdout_buffer);
-                        }
-
-                        let mut stderr_buffer = String::new();
-                        stderr_rx
-                            .read_to_string(&mut stderr_buffer)
-                            .map_err(|_| VmResultStatus::FailedToGetWASMStderr)?;
-
-                        if !stderr_buffer.is_empty() {
-                            stderr.push(stderr_buffer);
-                        }
-
-                        if let Err(err) = runtime_result {
-                            info!("WASM Error output: {:?}", &stderr);
-                            return VmResultStatus::ExecutionError(err.to_string()).into();
-                        }
-
-                        let execution_result = vm_context.as_ref(&wasm_store).result.lock();
-
-                        next_promise_queue = next_queue.lock().clone();
-                        dbg!(&next_promise_queue);
-                        promise_queue_mut.queue[index].status =
-                            PromiseStatus::Fulfilled(Some(execution_result.clone()));
-                    }
-
-                    // Just an example, delete this later
-                    PromiseAction::DatabaseSet(db_action) => {
-                        let res = String::from_bytes(&db_action.value);
-                        promise_queue_mut.queue[index].status = if res.is_err() {
-                            res.into()
-                        } else {
-                            self.host_adapter.db_set(&db_action.key, &res.unwrap()).await.into()
-                        };
-                    }
-
-                    PromiseAction::DatabaseGet(db_action) => {
-                        promise_queue_mut.queue[index].status = self.host_adapter.db_get(&db_action.key).await.into();
-                    }
-
-                    PromiseAction::Http(http_action) => {
-                        promise_queue_mut.queue[index].status =
-                            self.host_adapter.http_fetch(&http_action.url).await.into();
-                    }
-                    PromiseAction::ChainView(chain_view_action) => {
-                        promise_queue_mut.queue[index].status = self
-                            .host_adapter
-                            .chain_view(
-                                chain_view_action.chain,
-                                &chain_view_action.contract_id,
-                                &chain_view_action.method_name,
-                                chain_view_action.args.clone(),
-                            )
-                            .await
-                            .into();
-                    }
-                    PromiseAction::ChainCall(chain_call_action) => {
-                        promise_queue_mut.queue[index].status = self
-                            .host_adapter
-                            .chain_call(
-                                chain_call_action.chain,
-                                &chain_call_action.contract_id,
-                                &chain_call_action.method_name,
-                                chain_call_action.args.clone(),
-                                chain_call_action.deposit,
-                                self.node_config.clone(),
-                            )
-                            .await
-                            .into();
-                    }
-                    PromiseAction::TriggerEvent(trigger_event_action) => {
-                        promise_queue_mut.queue[index].status = self
-                            .host_adapter
-                            .trigger_event(trigger_event_action.event.clone())
-                            .await
-                            .into();
-                    }
-                    PromiseAction::P2PBroadcast(p2p_broadcast_action) => {
-                        // TODO we need to figure out how to handle success and errors using channels.
-                        p2p_command_sender_channel
-                            .send(P2PCommand::Broadcast(p2p_broadcast_action.data.clone()))
-                            .await
-                            .expect("fixed with above TODO");
-                    }
-                }
-            }
-        }
-
-        promise_queue_trace.push(promise_queue_mut.clone());
-
-        let res = self.execute_promise_queue(
+        let vm_context = VmContext::<HA>::create_vm_context(
+            &mut self.wasm_store,
             memory_adapter,
-            next_promise_queue,
-            stdout,
-            stderr,
-            promise_queue_trace,
+            self.shared_memory.clone(),
+            wasi_env.env.clone(),
+            self.host_adapter.clone(),
             p2p_command_sender_channel,
+            self.node_config.clone(),
         );
 
-        res.await
+        // TODO: Check for limited action in imports and remove accordingly
+        let imports = create_wasm_imports(&mut self.wasm_store, vm_context.clone(), &mut wasi_env, wasm_module)
+            .map_err(|_| VmResultStatus::FailedToCreateVMImports)?;
+
+        let wasmer_instance = Instance::new(&mut self.wasm_store, wasm_module, &imports)
+            .map_err(|e| VmResultStatus::FailedToCreateWasmerInstance(e.to_string()))?;
+
+        let mut env_mut = vm_context.as_mut(&mut self.wasm_store);
+        env_mut.memory = Some(
+            wasmer_instance
+                .exports
+                .get_memory("memory")
+                .map_err(|_| VmResultStatus::FailedToGetWASMMemory)?
+                .clone(),
+        );
+
+        wasi_env
+            .initialize(&mut self.wasm_store, wasmer_instance.clone())
+            .map_err(|_| VmResultStatus::FailedToGetWASMFn)?;
+
+        let main_func = wasmer_instance
+            .exports
+            .get_function(&call_action.function_name)
+            .map_err(|_| VmResultStatus::FailedToGetWASMFn)?;
+
+        let runtime_result = main_func.call(&mut self.wasm_store, &[]);
+
+        wasi_env.cleanup(&mut self.wasm_store, None);
+
+        let mut stdout_buffer = String::new();
+        stdout_rx
+            .read_to_string(&mut stdout_buffer)
+            .map_err(|_| VmResultStatus::FailedToConvertVMPipeToString)?;
+
+        if !stdout_buffer.is_empty() {
+            stdout.push(stdout_buffer);
+        }
+
+        let mut stderr_buffer = String::new();
+        stderr_rx
+            .read_to_string(&mut stderr_buffer)
+            .map_err(|_| VmResultStatus::FailedToGetWASMStderr)?;
+
+        if !stderr_buffer.is_empty() {
+            stderr.push(stderr_buffer);
+        }
+
+        if let Err(err) = runtime_result {
+            info!("WASM Error output: {:?}", &stderr);
+            return Err(VmResultStatus::ExecutionError(err.to_string()));
+        }
+
+        let execution_result = vm_context.as_ref(&self.wasm_store).result.lock();
+
+        Ok(execution_result.clone())
     }
 
-    async fn start_runtime(
-        &self,
+    pub fn start_runtime(
+        &mut self,
         config: VmConfig,
         memory_adapter: Arc<Mutex<InMemory>>,
         p2p_command_sender_channel: Sender<P2PCommand>,
     ) -> VmResult {
         let function_name = config.clone().start_func.unwrap_or_else(|| "_start".to_string());
 
-        let mut promise_queue_trace: Vec<PromiseQueue> = Vec::new();
-        let mut promise_queue = PromiseQueue::new();
-
-        promise_queue.add_promise(Promise {
-            action: PromiseAction::CallSelf(CallSelfAction {
-                function_name,
-                args: config.args,
-            }),
-            status: PromiseStatus::Unfulfilled,
-        });
-
         let mut stdout: Vec<String> = vec![];
         let mut stderr: Vec<String> = vec![];
 
-        let exit_info: ExitInfo = self
-            .execute_promise_queue(
-                memory_adapter,
-                promise_queue,
-                &mut stdout,
-                &mut stderr,
-                &mut promise_queue_trace,
-                p2p_command_sender_channel,
-            )
-            .await
-            .into();
+        let execution_result = self.execute_vm(
+            CallSelfAction {
+                function_name,
+                args: config.args,
+            },
+            memory_adapter,
+            &mut stdout,
+            &mut stderr,
+            p2p_command_sender_channel,
+        );
 
-        // There is always 1 queue with 1 promise in the trace (due to this func adding
-        // the entrypoint). Only if we haven't hit exit codes, since we no longer return
-        // early.
-        let result = if !promise_queue_trace.is_empty() {
-            let mut last_queue = promise_queue_trace
-                .pop()
-                .ok_or("Failed to get last promise queue")
-                .unwrap();
-            let last_promise_status = last_queue
-                .queue
-                .pop()
-                .ok_or("Failed to get last promise in promise queue")
-                .unwrap()
-                .status;
-
-            match last_promise_status {
-                PromiseStatus::Fulfilled(Some(data)) => Some(data),
-                PromiseStatus::Rejected(data) => Some(data),
-                _ => None,
-            }
-        } else {
-            None
-        };
-
-        VmResult {
-            stdout,
-            stderr,
-            result,
-            exit_info,
+        match execution_result {
+            Ok(result) => VmResult {
+                stdout,
+                stderr,
+                result: Some(result),
+                exit_info: VmResultStatus::EmptyQueue.into(),
+            },
+            Err(error) => VmResult {
+                stdout,
+                stderr,
+                result: None,
+                exit_info: error.into(),
+            },
         }
     }
 }

@@ -4,7 +4,7 @@ use near_primitives::account::id::ParseAccountError;
 use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum ChainAdapterError {
-    #[error("error calling contract change method")]
+    #[error("Error calling contract change method: {0}")]
     CallChangeMethod(String),
 
     #[error("error calling contract view method")]

@@ -7,7 +7,6 @@ use tokio::sync::mpsc::Sender;
 use wasmer::{AsStoreRef, FunctionEnv, Memory, MemoryView, Store};
 use wasmer_wasix::WasiEnv;
 
-use super::PromiseQueue;
 use crate::{HostAdapter, InMemory};
 
 #[derive(Clone)]
@@ -16,8 +15,6 @@ pub struct VmContext<HA: HostAdapter> {
     pub memory:                     Option<Memory>,
     pub memory_adapter:             Arc<Mutex<InMemory>>,
     pub shared_memory:              Arc<RwLock<InMemory>>,
-    pub promise_queue:              Arc<Mutex<PromiseQueue>>,
-    pub current_promise_queue:      Arc<Mutex<PromiseQueue>>,
     pub wasi_env:                   FunctionEnv<WasiEnv>,
     pub adapter:                    HA,
     pub node_config:                NodeConfig,
@@ -40,8 +37,6 @@ impl<HA: HostAdapter> VmContext<HA> {
         store: &mut Store,
         memory_adapter: Arc<Mutex<InMemory>>,
         shared_memory: Arc<RwLock<InMemory>>,
-        current_promise_queue: Arc<Mutex<PromiseQueue>>,
-        promise_queue: Arc<Mutex<PromiseQueue>>,
         wasi_env: FunctionEnv<WasiEnv>,
         adapter: HA,
         p2p_command_sender_channel: Sender<P2PCommand>,
@@ -54,8 +49,6 @@ impl<HA: HostAdapter> VmContext<HA> {
                 memory_adapter,
                 shared_memory,
                 memory: None,
-                current_promise_queue,
-                promise_queue,
                 wasi_env,
                 adapter,
                 call_result_value: Arc::new(RwLock::new(Vec::new())),

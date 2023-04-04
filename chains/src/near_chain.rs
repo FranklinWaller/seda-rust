@@ -3,14 +3,13 @@ use std::sync::Arc;
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_crypto::{ED25519PublicKey, ED25519SecretKey, SecretKey};
 use near_jsonrpc_client::{methods, JsonRpcClient};
-use near_jsonrpc_primitives::types::{query::QueryResponseKind, transactions::TransactionInfo};
+use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_primitives::{
     transaction::{Action, FunctionCallAction, SignedTransaction, Transaction, TransferAction},
     types::{AccountId, BlockReference, Finality, FunctionArgs},
     views::{FinalExecutionStatus, QueryRequest},
 };
 use seda_config::NearConfig;
-use tokio::time;
 
 use super::errors::{ChainAdapterError, Result};
 use crate::ChainAdapterTrait;
@@ -133,43 +132,19 @@ impl ChainAdapterTrait for NearChain {
 
     async fn send_tx(client: Self::Client, signed_tx: &[u8]) -> Result<Vec<u8>> {
         let signed_tx = SignedTransaction::try_from_slice(signed_tx)?;
-        let request = methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
+        let request = methods::broadcast_tx_commit::RpcBroadcastTxCommitRequest {
             signed_transaction: signed_tx.clone(),
         };
 
-        let sent_at = time::Instant::now();
-        let tx_hash = client.call(request).await?;
+        let response = client.call(request).await;
 
-        loop {
-            let response = client
-                .call(methods::tx::RpcTransactionStatusRequest {
-                    transaction_info: TransactionInfo::TransactionId {
-                        hash:       tx_hash,
-                        account_id: signed_tx.transaction.signer_id.clone(),
-                    },
-                })
-                .await;
-            let received_at = time::Instant::now();
-            let delta = (received_at - sent_at).as_secs();
-
-            if delta > 60 {
-                return Err(ChainAdapterError::BadTransactionTimestamp);
-            }
-
-            match response {
-                Err(err) => match err.handler_error() {
-                    Some(methods::tx::RpcTransactionError::UnknownTransaction { .. }) => {
-                        time::sleep(time::Duration::from_secs(2)).await;
-                        continue;
-                    }
-                    _ => return Err(ChainAdapterError::CallChangeMethod(err.to_string())),
-                },
-                Ok(response) => {
-                    if let FinalExecutionStatus::SuccessValue(value) = response.status {
-                        return Ok(value);
-                    } else {
-                        return Err(ChainAdapterError::FailedTx(format!("{:?}", response.status)));
-                    }
+        match response {
+            Err(err) => return Err(ChainAdapterError::CallChangeMethod(err.to_string())),
+            Ok(response) => {
+                if let FinalExecutionStatus::SuccessValue(value) = response.status {
+                    return Ok(value);
+                } else {
+                    return Err(ChainAdapterError::FailedTx(format!("{:?}", response.status)));
                 }
             }
         }

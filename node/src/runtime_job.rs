@@ -3,7 +3,7 @@ use std::{fs, sync::Arc};
 use actix::{prelude::*, Handler, Message};
 use parking_lot::{Mutex, RwLock};
 use seda_config::{ChainConfigs, NodeConfig};
-use seda_runtime::{HostAdapter, InMemory, Result, RunnableRuntime, Runtime, VmConfig, VmResult};
+use seda_runtime::{HostAdapter, InMemory, Result, Runtime, VmConfig, VmResult};
 use seda_runtime_sdk::{
     events::{Event, EventData},
     p2p::P2PCommand,
@@ -40,11 +40,7 @@ impl<HA: HostAdapter> Actor for RuntimeWorker<HA> {
         let shared_memory = self.shared_memory.clone();
         // TODO: when conditionally loading the consensus binary see if it allows full
         // or limited features
-        let mut runtime = futures::executor::block_on(async move {
-            Runtime::new(node_config, chain_configs, shared_memory, false)
-                .await
-                .expect("TODO")
-        });
+        let mut runtime = Runtime::new(node_config, chain_configs, shared_memory, false).expect("TODO");
 
         runtime
             .init(fs::read(&self.node_config.consensus_wasm_path).unwrap())
@@ -60,7 +56,7 @@ impl<HA: HostAdapter> Handler<RuntimeJob> for RuntimeWorker<HA> {
     fn handle(&mut self, msg: RuntimeJob, _ctx: &mut Self::Context) -> Self::Result {
         let memory_adapter = Arc::new(Mutex::new(InMemory::default()));
 
-        let mut args: Vec<String> = match msg.event.data {
+        let args: Vec<String> = match msg.event.data {
             EventData::BatchChainTick => vec!["batch".to_string()],
             EventData::ChainTick => vec![],
             EventData::CliCall(args) => args,
@@ -77,13 +73,9 @@ impl<HA: HostAdapter> Handler<RuntimeJob> for RuntimeWorker<HA> {
             start_func: None,
         };
 
-        let runtime = self.runtime.as_ref().unwrap();
+        let runtime = self.runtime.as_mut().unwrap();
 
-        let res = futures::executor::block_on(runtime.start_runtime(
-            vm_config,
-            memory_adapter,
-            self.p2p_command_sender_channel.clone(),
-        ));
+        let res = runtime.start_runtime(vm_config, memory_adapter, self.p2p_command_sender_channel.clone());
         // TODO maybe set up a prettier log format rather than debug of this type?
         info!(vm_result = ?res);
 

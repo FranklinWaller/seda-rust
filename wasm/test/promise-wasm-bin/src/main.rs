@@ -1,22 +1,18 @@
-use std::{env, fmt::Write, num::ParseIntError};
+use std::{env, num::ParseIntError};
 
 use seda_runtime_sdk::{
     wasm::{
         bn254_sign,
         bn254_verify,
-        call_self,
         db_get,
         db_set,
         execution_result,
         http_fetch,
-        memory_read,
-        memory_write,
         shared_memory_get,
         shared_memory_set,
         Bn254PrivateKey,
         Bn254PublicKey,
         Bn254Signature,
-        Promise,
     },
     FromBytes,
     PromiseStatus,
@@ -28,30 +24,12 @@ fn main() {
 
     println!("Hello World {:?}", args);
 
-    db_set("from_wasm", "somevalue")
-        .start()
-        .then(db_get("from_wasm"))
-        .then(call_self("db_fetch_success", vec!["ArgFromInsideWasm".to_string()]));
-}
-
-#[no_mangle]
-fn db_fetch_success() {
-    let args: Vec<String> = env::args().collect();
-    println!("Inside the callback {:?}", args);
-    Promise::result(1);
-
-    db_set("another_one", "a")
-        .start()
-        .then(db_set("x", "y"))
-        .then(db_get("another_one"))
-        .then(call_self("completed_all", vec![]));
-}
-
-#[no_mangle]
-fn completed_all() {
-    db_set("test_value", "completed").start();
-
-    Promise::result(2);
+    db_set("from_wasm", "somevalue");
+    db_get("from_wasm");
+    db_set("another_one", "completed");
+    db_set("x", "y");
+    let value = db_get("another_one").fulfilled();
+    shared_memory_set("test_value", value);
 }
 
 #[no_mangle]
@@ -59,62 +37,25 @@ fn http_fetch_test() {
     let args: Vec<String> = env::args().collect();
     println!("Hello world {:?}", args);
 
-    http_fetch(args.get(1).unwrap())
-        .start()
-        .then(call_self("http_fetch_test_success", vec![]));
-}
-
-#[no_mangle]
-fn http_fetch_test_success() {
-    let result = Promise::result(0);
+    let result = http_fetch(args.get(1).unwrap());
 
     if let PromiseStatus::Fulfilled(Some(bytes)) = result {
-        let value_to_store = String::from_bytes_vec(bytes).unwrap();
-
-        db_set("http_fetch_result", &value_to_store).start();
+        shared_memory_set("http_fetch_result", bytes);
     }
 }
 
 #[no_mangle]
-fn memory_adapter_test_success() {
-    let key = "u8";
-    let value = 234u8.to_bytes().eject();
-    memory_write(key, value.clone());
-
-    let read_value = memory_read(key);
-    println!("read_value: {read_value:?}");
-    assert_eq!(read_value, value);
-
-    let key = "u32";
-    let value = 3467u32.to_bytes().eject();
-    memory_write(key, value);
-    call_self("memory_adapter_callback_test_success", Vec::new()).start();
-}
-
-#[no_mangle]
-fn memory_adapter_callback_test_success() {
-    let read_value = memory_read("u8");
-    db_set("u8_result", &format!("{read_value:?}")).start();
-    let read_value = memory_read("u32");
-    db_set("u32_result", &format!("{read_value:?}")).start();
-}
-
-#[no_mangle]
 fn test_setting_execution_result() {
-    db_set("random_key", "random_value")
-        .start()
-        .then(call_self("test_setting_execution_result_step1", vec![]));
-}
-
-#[no_mangle]
-fn test_setting_execution_result_step1() {
+    db_set("random_key", "random_value");
     let result = "test-success".to_bytes().eject();
     execution_result(result);
 }
 
 #[no_mangle]
 fn test_limited_runtime() {
-    db_set("foo", "bar").start().then(call_self("test_rejected", vec![]));
+    let result = db_set("foo", "bar");
+
+    test_rejected(result);
 }
 
 #[no_mangle]
@@ -137,7 +78,7 @@ fn bn254_verify_test() {
     let public_key = Bn254PublicKey::from_uncompressed(public_key_bytes).unwrap();
 
     let result = bn254_verify(&message, &signature, &public_key);
-    db_set("bn254_verify_result", &format!("{result}")).start();
+    shared_memory_set("bn254_verify_result", format!("{result}").into_bytes());
 }
 
 #[no_mangle]
@@ -167,24 +108,15 @@ fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
         .collect()
 }
 
-// TODO: Something to include in our SDK? Or bn254 lib. Or use hex crate.
-fn encode_hex(bytes: &[u8]) -> String {
-    let mut result = String::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        write!(&mut result, "{:02x}", b).unwrap();
-    }
-
-    result
-}
-
 #[no_mangle]
 fn test_error_turns_into_rejection() {
-    http_fetch("fail!").start().then(call_self("test_rejected", vec![]));
+    let result = http_fetch("fail!");
+
+    test_rejected(result);
 }
 
 #[no_mangle]
-fn test_rejected() {
-    let result = Promise::result(0);
+fn test_rejected(result: PromiseStatus) {
     if let PromiseStatus::Rejected(rejected) = result {
         let str = String::from_bytes(&rejected).unwrap();
         println!("Promise rejected: {str}");

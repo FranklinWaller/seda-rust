@@ -80,11 +80,15 @@ impl PeerList {
     }
 
     pub fn set_peer_id(&mut self, multi_addr: Multiaddr, peer_id: PeerId) {
-        let mut peer_info = self.addr_to_peer.get(&multi_addr).unwrap().clone();
-        peer_info.peer_id = Some(peer_id);
+        if let Some(peer_info) = self.addr_to_peer.get(&multi_addr) {
+            let mut peer_info = peer_info.clone();
+            peer_info.peer_id = Some(peer_id);
 
-        self.addr_to_peer.insert(multi_addr.clone(), peer_info);
-        self.peer_to_addr.insert(peer_id, multi_addr);
+            self.addr_to_peer.insert(multi_addr.clone(), peer_info);
+            self.peer_to_addr.insert(peer_id, multi_addr);
+        } else {
+            tracing::warn!("Trying to set peer_id:{peer_id} on a non existing multi_addr:{multi_addr}");
+        }
     }
 
     pub fn remove_peer_by_addr(&mut self, multi_addr: &Multiaddr) {

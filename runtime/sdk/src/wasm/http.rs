@@ -1,11 +1,6 @@
-use super::Promise;
-use crate::{HttpAction, PromiseAction};
+use crate::{HttpAction, PromiseStatus};
 
-pub fn http_fetch(url: &str) -> Promise {
-    Promise::new(PromiseAction::Http(HttpAction { url: url.into() }))
-}
-
-pub fn http_fetch_new(url: &str) -> String {
+pub fn http_fetch(url: &str) -> PromiseStatus {
     let http_action = HttpAction { url: url.to_string() };
 
     let action = serde_json::to_string(&http_action).unwrap();
@@ -16,5 +11,5 @@ pub fn http_fetch_new(url: &str) -> String {
         super::raw::call_result_write(result_data_ptr.as_mut_ptr(), result_length);
     }
 
-    String::from_utf8(result_data_ptr).unwrap()
+    serde_json::from_slice(&result_data_ptr).expect("Could not deserialize http_fetch")
 }

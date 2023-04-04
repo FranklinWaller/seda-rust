@@ -1,22 +1,11 @@
 use clap::Args;
 use seda_runtime_sdk::{
     log,
-    wasm::{
-        call_self,
-        chain_call,
-        chain_view,
-        get_oracle_contract_id,
-        memory_read,
-        memory_write,
-        shared_memory_get,
-        shared_memory_set,
-        Promise,
-    },
+    wasm::{chain_call, chain_view, get_oracle_contract_id},
     Chain,
     FromBytes,
     Level,
     PromiseStatus,
-    ToBytes,
 };
 
 #[derive(Debug, Args)]
@@ -32,60 +21,29 @@ impl Bridge {
     pub fn handle(self) {
         log!(Level::Debug, "Bridge Handle");
 
-        // TODO: Temp fix, need to fix env variables
-        let contract_id = get_oracle_contract_id();
-        shared_memory_set("contract_id", contract_id.into());
+        match chain_view(self.chain, self.contract_id, self.method_name, self.args.into_bytes()) {
+            // TODO: I wonder if SEDA-188 could also make it so we don't have to do these conversions manually?
+            PromiseStatus::Fulfilled(Some(data)) => {
+                let data = String::from_bytes_vec(data).expect("chain_view resulted in a invalid string");
+                let args_string = serde_json::json!({ "data_request": data }).to_string();
+                log!(Level::Debug, "Posting args: {args_string}");
 
-        // we have a method to auto convert to bytes in a trait in runtime.
-        // it should be moved to the sdk
-        // TODO: SEDA-188 will make it so we can pass these instead of a vec of strings
-        // to .then()
-        memory_write("bridge_deposit", self.deposit.to_bytes().eject());
-        chain_view(self.chain, self.contract_id, self.method_name, self.args.into_bytes())
-            .start()
-            .then(call_self("bridge_step_1", vec![]));
-    }
-}
-
-#[no_mangle]
-fn bridge_step_1() {
-    log!(Level::Debug, "Bridge Step 1");
-    let contract_id =
-        String::from_utf8(shared_memory_get("contract_id")).expect("Could not read contract id from shared memory");
-    let result = Promise::result(0);
-    let deposit_bytes = memory_read("bridge_deposit");
-    let deposit = u128::from_bytes_vec(deposit_bytes).unwrap();
-    match result {
-        // TODO: I wonder if SEDA-188 could also make it so we don't have to do these conversions manually?
-        PromiseStatus::Fulfilled(Some(data)) => {
-            let data = String::from_bytes_vec(data).expect("chain_view resulted in a invalid string");
-            let args_string = serde_json::json!({ "data_request": data }).to_string();
-            log!(Level::Debug, "Posting args: {args_string}");
-            chain_call(
-                Chain::Near,
-                contract_id, // TODO: Currently panics
-                "post_data_request",
-                args_string.into_bytes(),
-                deposit,
-            )
-            .start()
-            .then(call_self("bridge_step_2", vec![]));
+                match chain_call(
+                    Chain::Near,
+                    get_oracle_contract_id(), // TODO: Currently panics
+                    "post_data_request",
+                    args_string.into_bytes(),
+                    self.deposit,
+                ) {
+                    PromiseStatus::Fulfilled(Some(vec)) => log!(
+                        Level::Debug,
+                        "Success message: {}",
+                        String::from_bytes_vec(vec).unwrap()
+                    ),
+                    _ => log!(Level::Error, "Posting bridge result to main chain failed."),
+                }
+            }
+            _ => log!(Level::Error, "Cannot bridge sub chain view failed"),
         }
-        _ => log!(Level::Error, "Cannot bridge sub chain view failed"),
-    }
-}
-
-#[no_mangle]
-fn bridge_step_2() {
-    log!(Level::Debug, "Bridge Step 2");
-    let result = Promise::result(0);
-    println!("{{\"status\": \"success\"}}");
-    match result {
-        PromiseStatus::Fulfilled(Some(vec)) => log!(
-            Level::Debug,
-            "Success message: {}",
-            String::from_bytes_vec(vec).unwrap()
-        ),
-        _ => log!(Level::Error, "Posting bridge result to main chain failed."),
     }
 }

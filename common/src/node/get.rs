@@ -55,6 +55,14 @@ pub struct ComputeMerkleRootResult {
     pub current_slot_leader: Option<String>,
 }
 
+impl TryFrom<Vec<u8>> for ComputeMerkleRootResult {
+    type Error = serde_json::Error;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        serde_json::from_slice(&value)
+    }
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct RequestWithdrawResult {
     pub current_epoch:  u64,
@@ -67,4 +75,12 @@ pub struct MainChainConfig {
     pub epoch_delay_for_election: u64,
     pub committee_size:           u64,
     pub withdraw_delay:           u64,
+}
+
+impl TryFrom<Vec<u8>> for MainChainConfig {
+    type Error = serde_json::Error;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        serde_json::from_slice(&value)
+    }
 }

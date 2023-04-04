@@ -33,6 +33,9 @@ pub struct PartialNodeConfig {
     /// An option to override the node runtime worker threads config value.
     #[arg(long)]
     pub runtime_worker_threads:  Option<u8>,
+    /// An option to override the default path where to store the WASM cache
+    #[arg(long)]
+    pub wasm_cache_path:         Option<PathBuf>,
     /// An option to override the path of the consensus WASM binary.
     #[arg(long)]
     pub consensus_wasm_path:     Option<PathBuf>,
@@ -127,6 +130,13 @@ impl PartialNodeConfig {
             |f| f as usize
         )?;
 
+        let wasm_cache_path = merge_config_cli!(
+            self,
+            cli_options,
+            wasm_cache_path,
+            Ok(PathBuf::from(NodeConfigInner::WASM_CACHE_PATH))
+        )?;
+
         let consensus_wasm_path: PathBuf = merge_config_cli!(
             self,
             cli_options,
@@ -147,6 +157,7 @@ impl PartialNodeConfig {
             contract_account_id,
             job_manager_interval_ms,
             runtime_worker_threads,
+            wasm_cache_path,
             consensus_wasm_path,
         }))
     }
@@ -163,6 +174,7 @@ impl Config for PartialNodeConfig {
             contract_account_id:     None,
             job_manager_interval_ms: None,
             runtime_worker_threads:  None,
+            wasm_cache_path:         None,
             consensus_wasm_path:     None,
         }
     }
@@ -180,6 +192,7 @@ pub struct NodeConfigInner {
     pub contract_account_id:     String,
     pub job_manager_interval_ms: u64,
     pub runtime_worker_threads:  usize,
+    pub wasm_cache_path:         PathBuf,
     pub consensus_wasm_path:     PathBuf,
 }
 
@@ -196,6 +209,7 @@ impl NodeConfigInner {
             contract_account_id:     String::new(),
             job_manager_interval_ms: Self::JOB_MANAGER_INTERVAL_MS,
             runtime_worker_threads:  Self::RUNTIME_WORKER_THREADS,
+            wasm_cache_path:         PathBuf::from(Self::WASM_CACHE_PATH),
             consensus_wasm_path:     default_consensus_wasm_path(),
         })
     }
@@ -207,6 +221,7 @@ impl NodeConfigInner {
     pub const JOB_MANAGER_INTERVAL_MS: u64 = 10;
     pub const RUNTIME_WORKER_THREADS: usize = 2;
     pub const SEDA_SECRET_KEY_PATH: &str = "./seda_secret_key";
+    pub const WASM_CACHE_PATH: &str = "./wasm_cache";
 }
 
 pub type NodeConfig = Arc<NodeConfigInner>;

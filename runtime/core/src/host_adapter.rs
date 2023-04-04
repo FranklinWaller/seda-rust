@@ -8,7 +8,7 @@ use seda_runtime_sdk::{events::Event, Chain};
 pub trait HostAdapter: Clone + Send + Sync + Unpin + 'static {
     type Error: Display + std::error::Error;
 
-    async fn new(config: ChainConfigs) -> Result<Self, Self::Error>
+    fn new(config: ChainConfigs) -> Result<Self, Self::Error>
     where
         Self: Sized;
 

@@ -2,188 +2,20 @@ use seda_runtime_sdk::{
     p2p::P2PCommand,
     ChainCallAction,
     ChainViewAction,
+    DatabaseGetAction,
+    DatabaseSetAction,
+    FromBytes,
     HttpAction,
     Level,
     P2PBroadcastAction,
+    PromiseStatus,
     TriggerEventAction,
 };
 use wasmer::{imports, Function, FunctionEnv, FunctionEnvMut, Imports, Module, Store, WasmPtr};
 use wasmer_wasix::WasiFunctionEnv;
 
-use super::{Result, RuntimeError, VmContext};
+use super::{Result, VmContext};
 use crate::{HostAdapter, MemoryAdapter};
-
-/// Adds a new promise to the promises stack
-pub fn promise_then_import_obj<HA: HostAdapter>(
-    store: &mut Store,
-    vm_context: &FunctionEnv<VmContext<HA>>,
-) -> Function {
-    fn promise_then<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        ptr: WasmPtr<u8>,
-        length: i32,
-    ) -> Result<()> {
-        let ctx = env.data();
-        let memory_ref = ctx.memory_view(&env);
-        let mut promises_queue_ref = ctx.promise_queue.lock();
-
-        let promise_data_raw = ptr.read_utf8_string(&memory_ref, length as u32)?;
-        let promise = serde_json::from_str(&promise_data_raw)?;
-
-        promises_queue_ref.add_promise(promise);
-
-        Ok(())
-    }
-
-    Function::new_typed_with_env(store, vm_context, promise_then)
-}
-
-/// Gets the length (stringified) of the promise status
-pub fn promise_status_length_import_obj<HA: HostAdapter>(
-    store: &mut Store,
-    vm_context: &FunctionEnv<VmContext<HA>>,
-) -> Function {
-    fn promise_status_length<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        promise_index: i32,
-    ) -> Result<i64> {
-        let ctx = env.data();
-        let promises_queue_ref = ctx.current_promise_queue.lock();
-
-        let promise_info = promises_queue_ref
-            .queue
-            .get(promise_index as usize)
-            .ok_or_else(|| format!("Could not find promise at index: {promise_index}"))?;
-
-        // The length depends on the full status enum + result in JSON
-        let status = serde_json::to_string(&promise_info.status)?;
-
-        Ok(status.len() as i64)
-    }
-
-    Function::new_typed_with_env(store, vm_context, promise_status_length)
-}
-
-/// Writes the status of the promise to the WASM memory
-pub fn promise_status_write_import_obj<HA: HostAdapter>(
-    store: &mut Store,
-    vm_context: &FunctionEnv<VmContext<HA>>,
-) -> Function {
-    fn promise_status_write<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        promise_index: i32,
-        result_data_ptr: WasmPtr<u8>,
-        result_data_length: i64,
-    ) -> Result<()> {
-        let ctx = env.data();
-        let memory_ref = ctx.memory_view(&env);
-        let promises_ref = ctx.current_promise_queue.lock();
-        let promise_info = promises_ref
-            .queue
-            .get(promise_index as usize)
-            .ok_or_else(|| RuntimeError::VmHostError(format!("Could not find promise at index: {promise_index}")))?;
-
-        let promise_status = serde_json::to_string(&promise_info.status)?;
-        let promise_status_bytes = promise_status.as_bytes();
-
-        let values = result_data_ptr.slice(&memory_ref, result_data_length as u32)?;
-
-        for index in 0..result_data_length {
-            values.index(index as u64).write(promise_status_bytes[index as usize])?;
-        }
-
-        Ok(())
-    }
-
-    Function::new_typed_with_env(store, vm_context, promise_status_write)
-}
-
-/// Reads the value from memory as byte array to the wasm result pointer.
-pub fn memory_read_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &FunctionEnv<VmContext<HA>>) -> Function {
-    fn memory_read<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        key: WasmPtr<u8>,
-        key_length: i64,
-        result_data_ptr: WasmPtr<u8>,
-        result_data_length: i64,
-    ) -> Result<()> {
-        let ctx = env.data();
-        let memory_ref = ctx.memory_view(&env);
-
-        let key = key.read_utf8_string(&memory_ref, key_length as u32)?;
-        let memory_adapter = ctx.memory_adapter.lock();
-        let read_value: Vec<u8> = memory_adapter.get(&key)?.unwrap_or_default();
-
-        if result_data_length as usize != read_value.len() {
-            Err(format!(
-                "The result data length `{result_data_length}` is not the same length for the value `{}`",
-                read_value.len()
-            ))?;
-        }
-
-        let values = result_data_ptr.slice(&memory_ref, result_data_length as u32)?;
-
-        for index in 0..result_data_length {
-            values.index(index as u64).write(read_value[index as usize])?;
-        }
-
-        Ok(())
-    }
-
-    Function::new_typed_with_env(store, vm_context, memory_read)
-}
-
-/// Reads the value from memory as byte array and sends the number of bytes to
-/// WASM.
-pub fn memory_read_length_import_obj<HA: HostAdapter>(
-    store: &mut Store,
-    vm_context: &FunctionEnv<VmContext<HA>>,
-) -> Function {
-    fn memory_read_length<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        key: WasmPtr<u8>,
-        key_length: i64,
-    ) -> Result<i64> {
-        let ctx = env.data();
-        let memory_ref = ctx.memory_view(&env);
-        let key = key.read_utf8_string(&memory_ref, key_length as u32)?;
-
-        let memory_adapter = ctx.memory_adapter.lock();
-        let read_value: Vec<u8> = memory_adapter.get(&key)?.unwrap_or_default();
-
-        Ok(read_value.len() as i64)
-    }
-
-    Function::new_typed_with_env(store, vm_context, memory_read_length)
-}
-
-/// Writes the value from WASM to the memory storage object.
-pub fn memory_write_import_obj<HA: HostAdapter>(
-    store: &mut Store,
-    vm_context: &FunctionEnv<VmContext<HA>>,
-) -> Function {
-    fn memory_write<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        key: WasmPtr<u8>,
-        key_length: i64,
-        value: WasmPtr<u8>,
-        value_len: i64,
-    ) -> Result<()> {
-        let ctx = env.data();
-        let memory = ctx.memory_view(&env);
-
-        let key = key.read_utf8_string(&memory, key_length as u32)?;
-        let value = value.slice(&memory, value_len as u32)?;
-        let value_bytes: Vec<u8> = value.read_to_vec()?;
-
-        let mut memory_adapter = ctx.memory_adapter.lock();
-        memory_adapter.put(&key, value_bytes);
-
-        Ok(())
-    }
-
-    Function::new_typed_with_env(store, vm_context, memory_write)
-}
 
 /// Reads the value from memory as byte array to the wasm result pointer.
 pub fn shared_memory_read_import_obj<HA: HostAdapter>(
@@ -288,7 +120,6 @@ pub fn shared_memory_write_import_obj<HA: HostAdapter>(
 
         let key = key.read_utf8_string(&memory, key_length as u32)?;
         let value = value.slice(&memory, value_len as u32)?.read_to_vec()?;
-
         let mut shared_memory = ctx.shared_memory.write();
         shared_memory.put(&key, value);
 
@@ -448,13 +279,12 @@ pub fn http_fetch_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &Fu
         let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
         let action = serde_json::from_str::<HttpAction>(&action_raw)?;
 
-        let result = wasi_env.tasks().block_on(async {
-            let response = adapters.http_fetch(&action.url).await.unwrap();
-            response.as_bytes().to_vec()
-        });
+        let result: PromiseStatus = wasi_env
+            .tasks()
+            .block_on(async { adapters.http_fetch(&action.url).await.into() });
 
         let mut call_value = ctx.call_result_value.write();
-        *call_value = result;
+        *call_value = serde_json::to_vec(&result)?;
 
         Ok(call_value.len() as u32)
     }
@@ -475,15 +305,15 @@ pub fn chain_view_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &Fu
         let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
         let action = serde_json::from_str::<ChainViewAction>(&action_raw)?;
 
-        let result = wasi_env.tasks().block_on(async {
+        let result: PromiseStatus = wasi_env.tasks().block_on(async {
             adapters
                 .chain_view(action.chain, &action.contract_id, &action.method_name, action.args)
                 .await
-                .unwrap()
+                .into()
         });
 
         let mut call_value = ctx.call_result_value.write();
-        *call_value = result;
+        *call_value = serde_json::to_vec(&result)?;
 
         Ok(call_value.len() as u32)
     }
@@ -505,7 +335,7 @@ pub fn chain_call_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &Fu
         let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
         let action = serde_json::from_str::<ChainCallAction>(&action_raw)?;
 
-        let result = wasi_env.tasks().block_on(async {
+        let result: PromiseStatus = wasi_env.tasks().block_on(async {
             adapters
                 .chain_call(
                     action.chain,
@@ -516,11 +346,11 @@ pub fn chain_call_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &Fu
                     node_config,
                 )
                 .await
-                .unwrap()
+                .into()
         });
 
         let mut call_value = ctx.call_result_value.write();
-        *call_value = result;
+        *call_value = serde_json::to_vec(&result)?;
 
         Ok(call_value.len() as u32)
     }
@@ -588,6 +418,63 @@ pub fn trigger_event_import_obj<HA: HostAdapter>(
     Function::new_typed_with_env(store, vm_context, trigger_event)
 }
 
+pub fn db_set_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &FunctionEnv<VmContext<HA>>) -> Function {
+    fn db_set<HA: HostAdapter>(
+        env: FunctionEnvMut<'_, VmContext<HA>>,
+        action_ptr: WasmPtr<u8>,
+        action_length: u32,
+    ) -> Result<u32> {
+        let ctx = env.data();
+        let memory = ctx.memory_view(&env);
+        let wasi_env = ctx.wasi_env.as_ref(&env);
+        let adapters = ctx.adapter.clone();
+        let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
+        let action = serde_json::from_str::<DatabaseSetAction>(&action_raw)?;
+
+        let result: PromiseStatus = wasi_env.tasks().block_on(async {
+            let value = String::from_bytes(&action.value);
+
+            match value {
+                Err(_) => value.into(),
+                Ok(value) => adapters.db_set(&action.key, &value).await.into(),
+            }
+        });
+
+        let mut call_value = ctx.call_result_value.write();
+        *call_value = serde_json::to_vec(&result)?;
+
+        Ok(call_value.len() as u32)
+    }
+
+    Function::new_typed_with_env(store, vm_context, db_set)
+}
+
+pub fn db_get_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &FunctionEnv<VmContext<HA>>) -> Function {
+    fn db_get<HA: HostAdapter>(
+        env: FunctionEnvMut<'_, VmContext<HA>>,
+        action_ptr: WasmPtr<u8>,
+        action_length: u32,
+    ) -> Result<u32> {
+        let ctx = env.data();
+        let memory = ctx.memory_view(&env);
+        let wasi_env = ctx.wasi_env.as_ref(&env);
+        let adapters = ctx.adapter.clone();
+        let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
+        let action = serde_json::from_str::<DatabaseGetAction>(&action_raw)?;
+
+        let result: PromiseStatus = wasi_env
+            .tasks()
+            .block_on(async { adapters.db_get(&action.key).await.into() });
+
+        let mut call_value = ctx.call_result_value.write();
+        *call_value = serde_json::to_vec(&result)?;
+
+        Ok(call_value.len() as u32)
+    }
+
+    Function::new_typed_with_env(store, vm_context, db_get)
+}
+
 pub fn call_result_value_length_import_obj<HA: HostAdapter>(
     store: &mut Store,
     vm_context: &FunctionEnv<VmContext<HA>>,
@@ -636,12 +523,6 @@ pub fn create_wasm_imports<HA: HostAdapter>(
 ) -> Result<Imports> {
     let host_import_obj = imports! {
         "env" => {
-            "promise_then" => promise_then_import_obj(store, &vm_context),
-            "promise_status_length" => promise_status_length_import_obj(store, &vm_context),
-            "promise_status_write" => promise_status_write_import_obj(store, &vm_context),
-            "memory_read" => memory_read_import_obj(store, &vm_context),
-            "memory_read_length" => memory_read_length_import_obj(store, &vm_context),
-            "memory_write" => memory_write_import_obj(store, &vm_context),
             "shared_memory_contains_key" => shared_memory_contains_key_import_obj(store, &vm_context),
             "shared_memory_read" => shared_memory_read_import_obj(store, &vm_context),
             "shared_memory_read_length" => shared_memory_read_length_import_obj(store, &vm_context),
@@ -653,6 +534,8 @@ pub fn create_wasm_imports<HA: HostAdapter>(
             "http_fetch" => http_fetch_import_obj(store, &vm_context),
             "chain_view" => chain_view_import_obj(store, &vm_context),
             "chain_call" => chain_call_import_obj(store, &vm_context),
+            "db_set" => db_set_import_obj(store, &vm_context),
+            "db_get" => db_get_import_obj(store, &vm_context),
             "p2p_broadcast" => p2p_broadcast_import_obj(store, &vm_context),
             "trigger_event" => trigger_event_import_obj(store, &vm_context),
             "call_result_write" => call_result_value_write_import_obj(store, &vm_context),

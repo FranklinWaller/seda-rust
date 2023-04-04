@@ -1,4 +1,7 @@
+use std::fmt::Debug;
+
 use serde::{Deserialize, Serialize};
+use serde_json;
 
 use super::PromiseAction;
 use crate::ToBytes;
@@ -20,6 +23,28 @@ pub enum PromiseStatus {
     // HTTP rejections could be an object(but encoded in a string).
     // Could private the type and then have methods or something.
     Rejected(Vec<u8>),
+}
+
+impl PromiseStatus {
+    /// Helper function that immidiatly assumes that the promise has been
+    /// fulfilled and return the value. Panics if result is not fulfilled
+    pub fn fulfilled(self) -> Vec<u8> {
+        if let Self::Fulfilled(Some(value)) = self {
+            return value;
+        }
+
+        panic!("Promise is not fulfilled: {:?}", &self);
+    }
+
+    pub fn parse<T>(self) -> Result<T, T::Error>
+    where
+        T: TryFrom<Vec<u8>>,
+        T: TryFrom<Vec<u8>, Error = serde_json::Error>,
+    {
+        let value = self.fulfilled();
+
+        value.try_into()
+    }
 }
 
 impl<T: crate::ToBytes, E: std::error::Error> From<Result<T, E>> for PromiseStatus {

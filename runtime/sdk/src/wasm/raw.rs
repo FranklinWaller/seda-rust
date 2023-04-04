@@ -1,10 +1,4 @@
 extern "C" {
-    pub fn promise_then(action_data_offset: *const u8, action_data_length: i32);
-    pub fn promise_status_length(promise_index: i32) -> i64;
-    pub fn promise_status_write(promise_index: i32, result_data_offset: *const u8, result_data_length: i64);
-    pub fn memory_read(key: *const u8, key_length: i64, result_data_ptr: *const u8, result_data_length: i64);
-    pub fn memory_read_length(key: *const u8, key_length: i64) -> i64;
-    pub fn memory_write(key: *const u8, key_length: i64, value: *const u8, value_length: i64);
     pub fn shared_memory_read(key: *const u8, key_length: i64, result_data_ptr: *const u8, result_data_length: i64);
     pub fn shared_memory_contains_key(key: *const u8, key_length: i64) -> u8;
     pub fn shared_memory_read_length(key: *const u8, key_length: i64) -> i64;
@@ -15,11 +9,13 @@ extern "C" {
     pub fn http_fetch(action: *const u8, action_length: u32) -> u32;
     pub fn chain_view(action: *const u8, action_length: u32) -> u32;
     pub fn chain_call(action: *const u8, action_length: u32) -> u32;
+    pub fn db_get(action: *const u8, action_length: u32) -> u32;
+    pub fn db_set(action: *const u8, action_length: u32) -> u32;
     pub fn p2p_broadcast(action: *const u8, action_length: u32);
+    pub fn trigger_event(action: *const u8, action_length: u32);
 
     // Reading call actions result
     pub fn call_result_write(result: *const u8, result_length: u32);
-    pub fn call_result_length() -> u32;
 
     pub fn _log(
         level: *const u8,

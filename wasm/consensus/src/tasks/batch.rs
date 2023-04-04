@@ -6,19 +6,15 @@ use seda_runtime_sdk::{
     to_yocto,
     wasm::{
         bn254_sign,
-        call_self,
         chain_call,
         chain_view,
         get_local_bn254_public_key,
         get_local_ed25519_public_key,
         get_oracle_contract_id,
         p2p_broadcast_message,
-        shared_memory_get,
         shared_memory_set,
         Bn254PublicKey,
-        Promise,
     },
-    FromBytes,
     Level,
     PromiseStatus,
 };
@@ -43,79 +39,39 @@ impl Batch {
         let contract_id = get_oracle_contract_id();
         log!(Level::Debug, "[BatchTask] Starting task for contract id: {contract_id}");
 
-        // TODO: Temp fix, need to fix env variables
-        shared_memory_set("contract_id", contract_id.clone().into());
-        shared_memory_set(
-            "ed25519_public_key",
-            hex::decode(get_local_ed25519_public_key()).expect("Missing WASI env var for ED25519 public key"),
-        );
-        shared_memory_set(
-            "bn254_public_key",
-            hex::decode(get_local_bn254_public_key()).expect("Missing WASI env var for BN254 public key"),
-        );
+        // Retrieve data from shared memory
+        let bn254_public_key =
+            hex::decode(get_local_bn254_public_key()).expect("Missing WASI env var for BN254 public key");
+        let ed25519_public_key =
+            hex::decode(get_local_ed25519_public_key()).expect("Missing WASI env var for ED25519 public key");
+        let mut signature_store = get_or_create_batch_signature_store(BATCH_SIGNATURE_STORE_KEY);
 
-        chain_view(
+        let batch: ComputeMerkleRootResult = chain_view(
             seda_runtime_sdk::Chain::Near,
             &contract_id,
             "compute_merkle_root",
             Vec::new(),
         )
-        .start()
-        // TODO: config logic should be moved to its own task
-        .then(chain_view(
-            seda_runtime_sdk::Chain::Near,
-            &contract_id,
-            "get_config",
-            Vec::new(),
-        ))
-        .then(chain_view(
-            seda_runtime_sdk::Chain::Near,
-            contract_id,
-            "get_last_generated_random_number",
-            Vec::new(),
-        ))
-        .then(call_self("batch_step_1", vec![]));
-    }
-}
+        .parse()
+        .unwrap();
 
-#[no_mangle]
-fn batch_step_1() {
-    // Retrieve data from shared memory
-    let contract_id =
-        String::from_utf8(shared_memory_get("contract_id")).expect("Could not read contract id from shared memory");
-    let bn254_public_key = shared_memory_get("bn254_public_key");
-    let ed25519_public_key = shared_memory_get("ed25519_public_key");
-    let mut signature_store = get_or_create_batch_signature_store(BATCH_SIGNATURE_STORE_KEY);
+        let node_implicit_account = hex::encode(&ed25519_public_key);
+        log!(
+            Level::Debug,
+            "[BatchTask][Slot #{}] Processing batch #{} (leader: {})",
+            &batch.current_slot,
+            hex::encode(&batch.merkle_root),
+            Some(&node_implicit_account) == batch.current_slot_leader.as_ref()
+        );
 
-    // Retrieve batch from promise result
-    let batch: ComputeMerkleRootResult = match Promise::result(0) {
-        PromiseStatus::Fulfilled(Some(batch_bytes)) => serde_json::from_slice(&batch_bytes)
-            .expect("Cannot convert `merkle_root` json to `ComputeMerkleRootResult`"),
-        PromiseStatus::Rejected(error) => {
-            let err = String::from_bytes_vec(error).unwrap();
-            panic!("`compute_merkle_root` promise rejected: {err:?}");
+        // Process batch (includes verification and broadcasting)
+        process_batch(&batch, &mut signature_store, &ed25519_public_key, &bn254_public_key);
+        // Process slot leader logic (only if node is slot leader)
+        if batch.current_slot_leader.is_none() {
+            log!(Level::Info, "Main-chain contract still bootstrapping (no slot leader)");
+        } else if batch.current_slot_leader == Some(node_implicit_account) {
+            process_slot_leader(&batch, &mut signature_store, &contract_id);
         }
-        other => {
-            panic!("`compute_merkle_root` promise other: {other:?}");
-        }
-    };
-
-    let node_implicit_account = hex::encode(&ed25519_public_key);
-    log!(
-        Level::Debug,
-        "[BatchTask][Slot #{}] Processing batch #{} (leader: {})",
-        &batch.current_slot,
-        hex::encode(&batch.merkle_root),
-        Some(&node_implicit_account) == batch.current_slot_leader.as_ref()
-    );
-
-    // Process batch (includes verification and broadcasting)
-    process_batch(&batch, &mut signature_store, &ed25519_public_key, &bn254_public_key);
-    // Process slot leader logic (only if node is slot leader)
-    if batch.current_slot_leader.is_none() {
-        log!(Level::Info, "Main-chain contract still bootstrapping (no slot leader)");
-    } else if batch.current_slot_leader == Some(node_implicit_account) {
-        process_slot_leader(&batch, &mut signature_store, &contract_id);
     }
 }
 
@@ -149,7 +105,7 @@ fn process_batch(
             serde_json::to_string(&signature_store).unwrap().into(),
         );
 
-        p2p_broadcast_message(signature_store.p2p_message.clone()).start();
+        p2p_broadcast_message(signature_store.p2p_message.clone());
     }
     // Case 3. Process new batch with different merkle root
     else {
@@ -204,18 +160,23 @@ fn process_batch(
                 .into(),
         );
 
-        p2p_broadcast_message(signature_store.p2p_message.clone()).start();
+        p2p_broadcast_message(signature_store.p2p_message.clone());
     }
 }
 
 fn process_slot_leader(batch: &ComputeMerkleRootResult, signature_store: &mut BatchSignatureStore, contract_id: &str) {
     // Retrieve chain config and last random number from promise results
-    let chain_config = if let PromiseStatus::Fulfilled(Some(config)) = Promise::result(1) {
-        serde_json::from_slice::<MainChainConfig>(&config).expect("Config is not of type `MainChainConfig`")
-    } else {
-        panic!("Could not fetch config from contract");
-    };
-    let last_random_number = if let PromiseStatus::Fulfilled(Some(num)) = Promise::result(2) {
+    let chain_config: MainChainConfig =
+        chain_view(seda_runtime_sdk::Chain::Near, contract_id, "get_config", Vec::new())
+            .parse()
+            .unwrap();
+
+    let last_random_number = if let PromiseStatus::Fulfilled(Some(num)) = chain_view(
+        seda_runtime_sdk::Chain::Near,
+        contract_id,
+        "get_last_generated_random_number",
+        Vec::new(),
+    ) {
         // Example of encoded number:
         // 85808566236214186893554888775712866405891396064732569795826684455150103772489
         let encoded = serde_json::from_slice::<String>(&num).expect("random number is not a string");
@@ -253,7 +214,7 @@ fn process_slot_leader(batch: &ComputeMerkleRootResult, signature_store: &mut Ba
             chain_config.committee_size,
         );
 
-        chain_call(
+        let response = chain_call(
             seda_runtime_sdk::Chain::Near,
             contract_id,
             "post_signed_batch",
@@ -267,7 +228,25 @@ fn process_slot_leader(batch: &ComputeMerkleRootResult, signature_store: &mut Ba
             .into_bytes(),
             // TODO: double-check deposit value
             to_yocto("1"),
-        )
-        .start();
+        );
+
+        match response {
+            PromiseStatus::Fulfilled(_) => log!(
+                Level::Info,
+                "[BatchTask][Slot #{}] Submitting batch #{} to `{}` succeeded",
+                batch.current_slot,
+                hex::encode(&batch.merkle_root),
+                contract_id,
+            ),
+            PromiseStatus::Rejected(err) => log!(
+                Level::Error,
+                "[BatchTask][Slot #{}] Submitting batch #{} to `{}` failed: {:?}",
+                batch.current_slot,
+                hex::encode(&batch.merkle_root),
+                contract_id,
+                String::from_utf8(err),
+            ),
+            _ => {}
+        }
     }
 }

@@ -6,8 +6,6 @@ use tokio::sync::mpsc::error::SendError;
 use wasmer::{CompileError, ExportError, InstantiationError};
 use wasmer_wasix::{FsError, WasiError, WasiStateCreationError};
 
-use crate::HostAdapter;
-
 #[derive(Debug, Error)]
 pub enum RuntimeError {
     #[error(transparent)]

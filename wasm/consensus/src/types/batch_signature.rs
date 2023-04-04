@@ -10,7 +10,7 @@ const EMPTY_SHA256: [u8; 32] = [
     164, 149, 153, 27, 120, 82, 184, 85,
 ];
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BatchSignatureStore {
     pub aggregated_signature:   Vec<u8>,
     pub aggregated_public_keys: Vec<u8>,

@@ -25,7 +25,7 @@ pub struct RuntimeTestAdapter {
 impl HostAdapter for RuntimeTestAdapter {
     type Error = RuntimeError;
 
-    async fn new(config: ChainConfigs) -> Result<Self> {
+    fn new(config: ChainConfigs) -> Result<Self> {
         Ok(Self {
             another_client: Client::Another(AnotherChain::new_client(&config.another)?),
             near_client:    Client::Near(NearChain::new_client(&config.near)?),

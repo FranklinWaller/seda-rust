@@ -14,9 +14,6 @@ pub use host_adapter::*;
 
 pub(crate) mod imports;
 
-mod promise;
-pub(crate) use promise::*;
-
 mod runtime;
 pub use runtime::*;
 
