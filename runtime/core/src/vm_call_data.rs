@@ -1,5 +1,5 @@
 #[derive(Debug, Clone)]
-pub struct VmConfig {
+pub struct VmCallData {
     /// Name of the binary, ex. "consensus", "fisherman", etc
     pub program_name: String,
 

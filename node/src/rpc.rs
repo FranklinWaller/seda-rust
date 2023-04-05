@@ -10,7 +10,6 @@ use seda_p2p::{
     libp2p::{Multiaddr, PeerId},
     DiscoveryStatus,
 };
-use seda_runtime::HostAdapter;
 use seda_runtime_sdk::{
     events::{Event, EventData},
     p2p::{AddPeerCommand, P2PCommand, RemovePeerCommand},
@@ -39,14 +38,14 @@ pub trait Rpc {
     async fn discover_peers(&self) -> Result<(), Error>;
 }
 
-pub struct CliServer<HA: HostAdapter> {
-    runtime_worker:             Addr<RuntimeWorker<HA>>,
+pub struct CliServer {
+    runtime_worker:             Addr<RuntimeWorker>,
     p2p_command_sender_channel: Sender<P2PCommand>,
     discovery_status:           DiscoveryStatus,
 }
 
 #[async_trait]
-impl<HA: HostAdapter> RpcServer for CliServer<HA> {
+impl RpcServer for CliServer {
     async fn cli(&self, args: Vec<String>) -> Result<Vec<String>, Error> {
         debug!("{:?}", &args);
 
@@ -112,8 +111,8 @@ pub struct JsonRpcServer {
 }
 
 impl JsonRpcServer {
-    pub async fn start<HA: HostAdapter>(
-        runtime_worker: Addr<RuntimeWorker<HA>>,
+    pub async fn start(
+        runtime_worker: Addr<RuntimeWorker>,
         addrs: &str,
         p2p_command_sender_channel: Sender<P2PCommand>,
         discovery_status: DiscoveryStatus,

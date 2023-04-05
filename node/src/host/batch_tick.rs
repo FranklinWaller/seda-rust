@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use actix::{AsyncContext, Handler, Message};
-use seda_runtime::HostAdapter;
 use seda_runtime_sdk::events::{Event, EventData};
 
 use super::Host;
@@ -16,7 +15,7 @@ impl BatchTickManager {
     const BATCH_TICK_INTERVAL: u64 = 1000 * 10;
 }
 
-impl<HA: HostAdapter> Handler<BatchTickManager> for Host<HA> {
+impl Handler<BatchTickManager> for Host {
     type Result = ();
 
     fn handle(&mut self, msg: BatchTickManager, ctx: &mut Self::Context) -> Self::Result {

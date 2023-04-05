@@ -1,5 +1,4 @@
 use actix::prelude::*;
-use seda_runtime::HostAdapter;
 use serde::{Deserialize, Serialize};
 
 use crate::{Host, NodeError, Result};
@@ -10,7 +9,7 @@ pub struct DatabaseGet {
     pub key: String,
 }
 
-impl<HA: HostAdapter> Handler<DatabaseGet> for Host<HA> {
+impl Handler<DatabaseGet> for Host {
     type Result = ResponseActFuture<Self, Result<Option<String>>>;
 
     fn handle(&mut self, msg: DatabaseGet, _ctx: &mut Self::Context) -> Self::Result {

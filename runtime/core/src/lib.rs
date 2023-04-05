@@ -1,7 +1,7 @@
 //! WASI compatible WASM VM
 
-mod config;
-pub use config::*;
+mod vm_call_data;
+pub use vm_call_data::*;
 
 mod context;
 pub use context::*;

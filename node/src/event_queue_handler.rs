@@ -1,5 +1,4 @@
 use actix::{Handler, Message};
-use seda_runtime::HostAdapter;
 use seda_runtime_sdk::events::Event;
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +16,7 @@ impl From<Event> for AddEventToQueue {
     }
 }
 
-impl<HA: HostAdapter> Handler<AddEventToQueue> for App<HA> {
+impl Handler<AddEventToQueue> for App {
     type Result = ();
 
     fn handle(&mut self, msg: AddEventToQueue, _ctx: &mut Self::Context) -> Self::Result {

@@ -18,12 +18,9 @@ use super::{Result, VmContext};
 use crate::{HostAdapter, MemoryAdapter};
 
 /// Reads the value from memory as byte array to the wasm result pointer.
-pub fn shared_memory_read_import_obj<HA: HostAdapter>(
-    store: &mut Store,
-    vm_context: &FunctionEnv<VmContext<HA>>,
-) -> Function {
-    fn shared_memory_read<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
+pub fn shared_memory_read_import_obj(store: &mut Store, vm_context: &FunctionEnv<VmContext>) -> Function {
+    fn shared_memory_read(
+        env: FunctionEnvMut<'_, VmContext>,
         key: WasmPtr<u8>,
         key_length: i64,
         result_data_ptr: WasmPtr<u8>,
@@ -57,15 +54,8 @@ pub fn shared_memory_read_import_obj<HA: HostAdapter>(
 
 /// Reads the value from memory as byte array and sends the number of bytes to
 /// WASM.
-pub fn shared_memory_read_length_import_obj<HA: HostAdapter>(
-    store: &mut Store,
-    vm_context: &FunctionEnv<VmContext<HA>>,
-) -> Function {
-    fn shared_memory_read_length<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        key: WasmPtr<u8>,
-        key_length: i64,
-    ) -> Result<i64> {
+pub fn shared_memory_read_length_import_obj(store: &mut Store, vm_context: &FunctionEnv<VmContext>) -> Function {
+    fn shared_memory_read_length(env: FunctionEnvMut<'_, VmContext>, key: WasmPtr<u8>, key_length: i64) -> Result<i64> {
         let ctx = env.data();
         let memory = ctx.memory_view(&env);
 
@@ -80,15 +70,8 @@ pub fn shared_memory_read_length_import_obj<HA: HostAdapter>(
 }
 
 /// Reads the value from memory as byte array and returns a bool if it exists
-pub fn shared_memory_contains_key_import_obj<HA: HostAdapter>(
-    store: &mut Store,
-    vm_context: &FunctionEnv<VmContext<HA>>,
-) -> Function {
-    fn shared_memory_contains_key<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        key: WasmPtr<u8>,
-        key_length: i64,
-    ) -> Result<u8> {
+pub fn shared_memory_contains_key_import_obj(store: &mut Store, vm_context: &FunctionEnv<VmContext>) -> Function {
+    fn shared_memory_contains_key(env: FunctionEnvMut<'_, VmContext>, key: WasmPtr<u8>, key_length: i64) -> Result<u8> {
         let ctx = env.data();
         let memory = ctx.memory_view(&env);
 
@@ -104,12 +87,9 @@ pub fn shared_memory_contains_key_import_obj<HA: HostAdapter>(
 }
 
 /// Writes the value from WASM to the memory storage object.
-pub fn shared_memory_write_import_obj<HA: HostAdapter>(
-    store: &mut Store,
-    vm_context: &FunctionEnv<VmContext<HA>>,
-) -> Function {
-    fn shared_memory_write<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
+pub fn shared_memory_write_import_obj(store: &mut Store, vm_context: &FunctionEnv<VmContext>) -> Function {
+    fn shared_memory_write(
+        env: FunctionEnvMut<'_, VmContext>,
         key: WasmPtr<u8>,
         key_length: i64,
         value: WasmPtr<u8>,
@@ -129,15 +109,8 @@ pub fn shared_memory_write_import_obj<HA: HostAdapter>(
     Function::new_typed_with_env(store, vm_context, shared_memory_write)
 }
 
-fn execution_result_import_obj<HA: HostAdapter>(
-    store: &mut Store,
-    vm_context: &FunctionEnv<VmContext<HA>>,
-) -> Function {
-    fn execution_result<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        result_ptr: WasmPtr<u8>,
-        result_length: i32,
-    ) -> Result<()> {
+fn execution_result_import_obj(store: &mut Store, vm_context: &FunctionEnv<VmContext>) -> Function {
+    fn execution_result(env: FunctionEnvMut<'_, VmContext>, result_ptr: WasmPtr<u8>, result_length: i32) -> Result<()> {
         let ctx = env.data();
         let memory = ctx.memory_view(&env);
 
@@ -151,9 +124,9 @@ fn execution_result_import_obj<HA: HostAdapter>(
     Function::new_typed_with_env(store, vm_context, execution_result)
 }
 
-pub fn log_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &FunctionEnv<VmContext<HA>>) -> Function {
-    fn log<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
+pub fn log_import_obj(store: &mut Store, vm_context: &FunctionEnv<VmContext>) -> Function {
+    fn log(
+        env: FunctionEnvMut<'_, VmContext>,
         level: WasmPtr<u8>,
         level_len: i32,
         msg: WasmPtr<u8>,
@@ -187,12 +160,9 @@ pub fn log_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &FunctionE
 ///
 /// Output:
 ///     - u8 (boolean, 1 for true)
-pub fn bn254_verify_import_obj<HA: HostAdapter>(
-    store: &mut Store,
-    vm_context: &FunctionEnv<VmContext<HA>>,
-) -> Function {
-    fn bn254_verify<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
+pub fn bn254_verify_import_obj(store: &mut Store, vm_context: &FunctionEnv<VmContext>) -> Function {
+    fn bn254_verify(
+        env: FunctionEnvMut<'_, VmContext>,
         message: WasmPtr<u8>,
         message_length: i64,
         signature: WasmPtr<u8>,
@@ -229,9 +199,9 @@ pub fn bn254_verify_import_obj<HA: HostAdapter>(
 ///
 /// Output:
 ///     - Signature (a G1 point) as byte array to the wasm result pointer
-pub fn bn254_sign_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &FunctionEnv<VmContext<HA>>) -> Function {
-    fn bn254_sign<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
+pub fn bn254_sign_import_obj(store: &mut Store, vm_context: &FunctionEnv<VmContext>) -> Function {
+    fn bn254_sign(
+        env: FunctionEnvMut<'_, VmContext>,
         message: WasmPtr<u8>,
         message_length: i64,
         result_data_ptr: WasmPtr<u8>,
@@ -266,220 +236,215 @@ pub fn bn254_sign_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &Fu
     Function::new_typed_with_env(store, vm_context, bn254_sign)
 }
 
-pub fn http_fetch_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &FunctionEnv<VmContext<HA>>) -> Function {
-    fn http_fetch<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        action_ptr: WasmPtr<u8>,
-        action_length: u32,
-    ) -> Result<u32> {
-        let ctx = env.data();
-        let memory = ctx.memory_view(&env);
-        let wasi_env = ctx.wasi_env.as_ref(&env);
-        let adapters = ctx.adapter.clone();
-        let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
-        let action = serde_json::from_str::<HttpAction>(&action_raw)?;
-
-        let result: PromiseStatus = wasi_env
-            .tasks()
-            .block_on(async { adapters.http_fetch(&action.url).await.into() });
-
-        let mut call_value = ctx.call_result_value.write();
-        *call_value = serde_json::to_vec(&result)?;
-
-        Ok(call_value.len() as u32)
-    }
-
-    Function::new_typed_with_env(store, vm_context, http_fetch)
-}
-
-pub fn chain_view_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &FunctionEnv<VmContext<HA>>) -> Function {
-    fn chain_view<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        action_ptr: WasmPtr<u8>,
-        action_length: u32,
-    ) -> Result<u32> {
-        let ctx = env.data();
-        let memory = ctx.memory_view(&env);
-        let wasi_env = ctx.wasi_env.as_ref(&env);
-        let adapters = ctx.adapter.clone();
-        let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
-        let action = serde_json::from_str::<ChainViewAction>(&action_raw)?;
-
-        let result: PromiseStatus = wasi_env.tasks().block_on(async {
-            adapters
-                .chain_view(action.chain, &action.contract_id, &action.method_name, action.args)
-                .await
-                .into()
-        });
-
-        let mut call_value = ctx.call_result_value.write();
-        *call_value = serde_json::to_vec(&result)?;
-
-        Ok(call_value.len() as u32)
-    }
-
-    Function::new_typed_with_env(store, vm_context, chain_view)
-}
-
-pub fn chain_call_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &FunctionEnv<VmContext<HA>>) -> Function {
-    fn chain_call<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        action_ptr: WasmPtr<u8>,
-        action_length: u32,
-    ) -> Result<u32> {
-        let ctx = env.data();
-        let memory = ctx.memory_view(&env);
-        let wasi_env = ctx.wasi_env.as_ref(&env);
-        let adapters = ctx.adapter.clone();
-        let node_config = ctx.node_config.clone();
-        let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
-        let action = serde_json::from_str::<ChainCallAction>(&action_raw)?;
-
-        let result: PromiseStatus = wasi_env.tasks().block_on(async {
-            adapters
-                .chain_call(
-                    action.chain,
-                    &action.contract_id,
-                    &action.method_name,
-                    action.args,
-                    action.deposit,
-                    node_config,
-                )
-                .await
-                .into()
-        });
-
-        let mut call_value = ctx.call_result_value.write();
-        *call_value = serde_json::to_vec(&result)?;
-
-        Ok(call_value.len() as u32)
-    }
-
-    Function::new_typed_with_env(store, vm_context, chain_call)
-}
-
-pub fn p2p_broadcast_import_obj<HA: HostAdapter>(
+pub fn http_fetch_import_obj(
     store: &mut Store,
-    vm_context: &FunctionEnv<VmContext<HA>>,
+    vm_context: &FunctionEnv<VmContext>,
+    host_adapter: impl HostAdapter,
 ) -> Function {
-    fn p2p_broadcast<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        action_ptr: WasmPtr<u8>,
-        action_length: u32,
-    ) -> Result<()> {
-        let ctx = env.data();
-        let memory = ctx.memory_view(&env);
-        let wasi_env = ctx.wasi_env.as_ref(&env);
-        let p2p_command_sender_channel = ctx.p2p_command_sender_channel.clone();
-        let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
-        let action = serde_json::from_str::<P2PBroadcastAction>(&action_raw)?;
+    Function::new_typed_with_env(
+        store,
+        vm_context,
+        move |env: FunctionEnvMut<'_, VmContext>, action_ptr: WasmPtr<u8>, action_length: u32| -> Result<u32> {
+            let ctx = env.data();
+            let memory = ctx.memory_view(&env);
+            let wasi_env = ctx.wasi_env.as_ref(&env);
+            let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
+            let action = serde_json::from_str::<HttpAction>(&action_raw)?;
 
-        wasi_env.tasks().block_on(async {
-            // TODO we need to figure out how to handle success and errors using channels.
-            p2p_command_sender_channel
-                .send(P2PCommand::Broadcast(action.data))
-                .await
-                .expect("fixed with above TODO");
-            // Some way to broadcast p2p message
-        });
+            let result: PromiseStatus = wasi_env
+                .tasks()
+                .block_on(async { host_adapter.http_fetch(&action.url).await.into() });
 
-        Ok(())
-    }
+            let mut call_value = ctx.call_result_value.write();
+            *call_value = serde_json::to_vec(&result)?;
 
-    Function::new_typed_with_env(store, vm_context, p2p_broadcast)
+            Ok(call_value.len() as u32)
+        },
+    )
 }
 
-pub fn trigger_event_import_obj<HA: HostAdapter>(
+pub fn chain_view_import_obj(
     store: &mut Store,
-    vm_context: &FunctionEnv<VmContext<HA>>,
+    vm_context: &FunctionEnv<VmContext>,
+    host_adapter: impl HostAdapter,
 ) -> Function {
-    fn trigger_event<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        action_ptr: WasmPtr<u8>,
-        action_length: u32,
-    ) -> Result<()> {
-        let ctx = env.data();
-        let memory = ctx.memory_view(&env);
-        let wasi_env = ctx.wasi_env.as_ref(&env);
-        let adapters = ctx.adapter.clone();
-        let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
-        let action = serde_json::from_str::<TriggerEventAction>(&action_raw)?;
+    Function::new_typed_with_env(
+        store,
+        vm_context,
+        move |env: FunctionEnvMut<'_, VmContext>, action_ptr: WasmPtr<u8>, action_length: u32| -> Result<u32> {
+            let ctx = env.data();
+            let memory = ctx.memory_view(&env);
+            let wasi_env = ctx.wasi_env.as_ref(&env);
+            let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
+            let action = serde_json::from_str::<ChainViewAction>(&action_raw)?;
 
-        wasi_env.tasks().block_on(async {
-            adapters
-                .trigger_event(action.event)
-                .await
-                .map_err(|err| err.to_string())
-        })?;
+            let result: PromiseStatus = wasi_env.tasks().block_on(async {
+                host_adapter
+                    .chain_view(action.chain, &action.contract_id, &action.method_name, action.args)
+                    .await
+                    .into()
+            });
 
-        Ok(())
-    }
+            let mut call_value = ctx.call_result_value.write();
+            *call_value = serde_json::to_vec(&result)?;
 
-    Function::new_typed_with_env(store, vm_context, trigger_event)
+            Ok(call_value.len() as u32)
+        },
+    )
 }
 
-pub fn db_set_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &FunctionEnv<VmContext<HA>>) -> Function {
-    fn db_set<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        action_ptr: WasmPtr<u8>,
-        action_length: u32,
-    ) -> Result<u32> {
-        let ctx = env.data();
-        let memory = ctx.memory_view(&env);
-        let wasi_env = ctx.wasi_env.as_ref(&env);
-        let adapters = ctx.adapter.clone();
-        let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
-        let action = serde_json::from_str::<DatabaseSetAction>(&action_raw)?;
-
-        let result: PromiseStatus = wasi_env.tasks().block_on(async {
-            let value = String::from_bytes(&action.value);
-
-            match value {
-                Err(_) => value.into(),
-                Ok(value) => adapters.db_set(&action.key, &value).await.into(),
-            }
-        });
-
-        let mut call_value = ctx.call_result_value.write();
-        *call_value = serde_json::to_vec(&result)?;
-
-        Ok(call_value.len() as u32)
-    }
-
-    Function::new_typed_with_env(store, vm_context, db_set)
-}
-
-pub fn db_get_import_obj<HA: HostAdapter>(store: &mut Store, vm_context: &FunctionEnv<VmContext<HA>>) -> Function {
-    fn db_get<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
-        action_ptr: WasmPtr<u8>,
-        action_length: u32,
-    ) -> Result<u32> {
-        let ctx = env.data();
-        let memory = ctx.memory_view(&env);
-        let wasi_env = ctx.wasi_env.as_ref(&env);
-        let adapters = ctx.adapter.clone();
-        let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
-        let action = serde_json::from_str::<DatabaseGetAction>(&action_raw)?;
-
-        let result: PromiseStatus = wasi_env
-            .tasks()
-            .block_on(async { adapters.db_get(&action.key).await.into() });
-
-        let mut call_value = ctx.call_result_value.write();
-        *call_value = serde_json::to_vec(&result)?;
-
-        Ok(call_value.len() as u32)
-    }
-
-    Function::new_typed_with_env(store, vm_context, db_get)
-}
-
-pub fn call_result_value_length_import_obj<HA: HostAdapter>(
+pub fn chain_call_import_obj(
     store: &mut Store,
-    vm_context: &FunctionEnv<VmContext<HA>>,
+    vm_context: &FunctionEnv<VmContext>,
+    host_adapter: impl HostAdapter,
 ) -> Function {
-    fn call_result_value_length<HA: HostAdapter>(env: FunctionEnvMut<'_, VmContext<HA>>) -> Result<u32> {
+    Function::new_typed_with_env(
+        store,
+        vm_context,
+        move |env: FunctionEnvMut<'_, VmContext>, action_ptr: WasmPtr<u8>, action_length: u32| -> Result<u32> {
+            let ctx = env.data();
+            let memory = ctx.memory_view(&env);
+            let wasi_env = ctx.wasi_env.as_ref(&env);
+            let node_config = ctx.node_config.clone();
+            let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
+            let action = serde_json::from_str::<ChainCallAction>(&action_raw)?;
+
+            let result: PromiseStatus = wasi_env.tasks().block_on(async {
+                host_adapter
+                    .chain_call(
+                        action.chain,
+                        &action.contract_id,
+                        &action.method_name,
+                        action.args,
+                        action.deposit,
+                        node_config,
+                    )
+                    .await
+                    .into()
+            });
+
+            let mut call_value = ctx.call_result_value.write();
+            *call_value = serde_json::to_vec(&result)?;
+
+            Ok(call_value.len() as u32)
+        },
+    )
+}
+
+pub fn p2p_broadcast_import_obj(store: &mut Store, vm_context: &FunctionEnv<VmContext>) -> Function {
+    Function::new_typed_with_env(
+        store,
+        vm_context,
+        move |env: FunctionEnvMut<'_, VmContext>, action_ptr: WasmPtr<u8>, action_length: u32| -> Result<()> {
+            let ctx = env.data();
+            let memory = ctx.memory_view(&env);
+            let wasi_env = ctx.wasi_env.as_ref(&env);
+            let p2p_command_sender_channel = ctx.p2p_command_sender_channel.clone();
+            let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
+            let action = serde_json::from_str::<P2PBroadcastAction>(&action_raw)?;
+
+            wasi_env.tasks().block_on(async {
+                // TODO we need to figure out how to handle success and errors using channels.
+                p2p_command_sender_channel
+                    .send(P2PCommand::Broadcast(action.data))
+                    .await
+                    .expect("fixed with above TODO");
+                // Some way to broadcast p2p message
+            });
+
+            Ok(())
+        },
+    )
+}
+
+pub fn trigger_event_import_obj(
+    store: &mut Store,
+    vm_context: &FunctionEnv<VmContext>,
+    host_adapter: impl HostAdapter,
+) -> Function {
+    Function::new_typed_with_env(
+        store,
+        vm_context,
+        move |env: FunctionEnvMut<'_, VmContext>, action_ptr: WasmPtr<u8>, action_length: u32| -> Result<()> {
+            let ctx = env.data();
+            let memory = ctx.memory_view(&env);
+            let wasi_env = ctx.wasi_env.as_ref(&env);
+            let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
+            let action = serde_json::from_str::<TriggerEventAction>(&action_raw)?;
+
+            wasi_env.tasks().block_on(async {
+                host_adapter
+                    .trigger_event(action.event)
+                    .await
+                    .map_err(|err| err.to_string())
+            })?;
+
+            Ok(())
+        },
+    )
+}
+
+pub fn db_set_import_obj(
+    store: &mut Store,
+    vm_context: &FunctionEnv<VmContext>,
+    host_adapter: impl HostAdapter,
+) -> Function {
+    Function::new_typed_with_env(
+        store,
+        vm_context,
+        move |env: FunctionEnvMut<'_, VmContext>, action_ptr: WasmPtr<u8>, action_length: u32| -> Result<u32> {
+            let ctx = env.data();
+            let memory = ctx.memory_view(&env);
+            let wasi_env = ctx.wasi_env.as_ref(&env);
+            let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
+            let action = serde_json::from_str::<DatabaseSetAction>(&action_raw)?;
+
+            let result: PromiseStatus = wasi_env.tasks().block_on(async {
+                let value = String::from_bytes(&action.value);
+
+                match value {
+                    Err(_) => value.into(),
+                    Ok(value) => host_adapter.db_set(&action.key, &value).await.into(),
+                }
+            });
+
+            let mut call_value = ctx.call_result_value.write();
+            *call_value = serde_json::to_vec(&result)?;
+
+            Ok(call_value.len() as u32)
+        },
+    )
+}
+
+pub fn db_get_import_obj(
+    store: &mut Store,
+    vm_context: &FunctionEnv<VmContext>,
+    host_adapter: impl HostAdapter,
+) -> Function {
+    Function::new_typed_with_env(
+        store,
+        vm_context,
+        move |env: FunctionEnvMut<'_, VmContext>, action_ptr: WasmPtr<u8>, action_length: u32| -> Result<u32> {
+            let ctx = env.data();
+            let memory = ctx.memory_view(&env);
+            let wasi_env = ctx.wasi_env.as_ref(&env);
+            let action_raw: String = action_ptr.read_utf8_string(&memory, action_length)?;
+            let action = serde_json::from_str::<DatabaseGetAction>(&action_raw)?;
+
+            let result: PromiseStatus = wasi_env
+                .tasks()
+                .block_on(async { host_adapter.db_get(&action.key).await.into() });
+
+            let mut call_value = ctx.call_result_value.write();
+            *call_value = serde_json::to_vec(&result)?;
+
+            Ok(call_value.len() as u32)
+        },
+    )
+}
+
+pub fn call_result_value_length_import_obj(store: &mut Store, vm_context: &FunctionEnv<VmContext>) -> Function {
+    fn call_result_value_length(env: FunctionEnvMut<'_, VmContext>) -> Result<u32> {
         let ctx = env.data();
         let call_value = ctx.call_result_value.read();
 
@@ -489,12 +454,9 @@ pub fn call_result_value_length_import_obj<HA: HostAdapter>(
     Function::new_typed_with_env(store, vm_context, call_result_value_length)
 }
 
-pub fn call_result_value_write_import_obj<HA: HostAdapter>(
-    store: &mut Store,
-    vm_context: &FunctionEnv<VmContext<HA>>,
-) -> Function {
-    fn call_result_value<HA: HostAdapter>(
-        env: FunctionEnvMut<'_, VmContext<HA>>,
+pub fn call_result_value_write_import_obj(store: &mut Store, vm_context: &FunctionEnv<VmContext>) -> Function {
+    fn call_result_value(
+        env: FunctionEnvMut<'_, VmContext>,
         result_data_ptr: WasmPtr<u8>,
         result_data_length: u32,
     ) -> Result<()> {
@@ -515,11 +477,12 @@ pub fn call_result_value_write_import_obj<HA: HostAdapter>(
 }
 
 // Creates the WASM function imports with the stringed names.
-pub fn create_wasm_imports<HA: HostAdapter>(
+pub fn create_wasm_imports(
     store: &mut Store,
-    vm_context: FunctionEnv<VmContext<HA>>,
+    vm_context: FunctionEnv<VmContext>,
     wasi_env: &mut WasiFunctionEnv,
     wasm_module: &Module,
+    host_adapter: impl HostAdapter,
 ) -> Result<Imports> {
     let host_import_obj = imports! {
         "env" => {
@@ -531,13 +494,13 @@ pub fn create_wasm_imports<HA: HostAdapter>(
             "_log" => log_import_obj(store, &vm_context),
             "bn254_verify" => bn254_verify_import_obj(store, &vm_context),
             "bn254_sign" => bn254_sign_import_obj(store, &vm_context),
-            "http_fetch" => http_fetch_import_obj(store, &vm_context),
-            "chain_view" => chain_view_import_obj(store, &vm_context),
-            "chain_call" => chain_call_import_obj(store, &vm_context),
-            "db_set" => db_set_import_obj(store, &vm_context),
-            "db_get" => db_get_import_obj(store, &vm_context),
+            "http_fetch" => http_fetch_import_obj(store, &vm_context, host_adapter.clone()),
+            "chain_view" => chain_view_import_obj(store, &vm_context, host_adapter.clone()),
+            "chain_call" => chain_call_import_obj(store, &vm_context, host_adapter.clone()),
+            "db_set" => db_set_import_obj(store, &vm_context, host_adapter.clone()),
+            "db_get" => db_get_import_obj(store, &vm_context, host_adapter.clone()),
             "p2p_broadcast" => p2p_broadcast_import_obj(store, &vm_context),
-            "trigger_event" => trigger_event_import_obj(store, &vm_context),
+            "trigger_event" => trigger_event_import_obj(store, &vm_context, host_adapter),
             "call_result_write" => call_result_value_write_import_obj(store, &vm_context),
             "call_result_length" => call_result_value_length_import_obj(store, &vm_context),
         }

@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use actix::{AsyncContext, Handler, Message};
-use seda_runtime::HostAdapter;
 
 use crate::{app::App, runtime_job::RuntimeJob};
 
@@ -25,7 +24,7 @@ impl StartJobManager {
     const JOB_MANAGER_INTERVAL: u64 = 200;
 }
 
-impl<HA: HostAdapter> Handler<StartJobManager> for App<HA> {
+impl Handler<StartJobManager> for App {
     type Result = ();
 
     fn handle(&mut self, msg: StartJobManager, ctx: &mut Self::Context) -> Self::Result {

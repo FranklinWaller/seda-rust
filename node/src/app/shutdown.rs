@@ -1,5 +1,4 @@
 use actix::{Handler, Message, System};
-use seda_runtime::HostAdapter;
 use tracing::error;
 
 use super::App;
@@ -8,7 +7,7 @@ use super::App;
 #[rtype(result = "()")]
 pub struct Shutdown;
 
-impl<HA: HostAdapter> Handler<Shutdown> for App<HA> {
+impl Handler<Shutdown> for App {
     type Result = ();
 
     fn handle(&mut self, _msg: Shutdown, _ctx: &mut Self::Context) {

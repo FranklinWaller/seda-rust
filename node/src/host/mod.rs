@@ -10,7 +10,6 @@ pub use db_set::*;
 mod http_fetch;
 pub use http_fetch::HttpFetch;
 use rusqlite::params;
-use seda_runtime::HostAdapter;
 use tokio_rusqlite::Connection;
 
 mod chain_call;
@@ -32,12 +31,12 @@ pub use set_app_addr::*;
 
 use crate::{app::App, NodeError};
 
-pub struct Host<HA: HostAdapter> {
+pub struct Host {
     db_conn:        Connection,
-    app_actor_addr: Option<Addr<App<HA>>>,
+    app_actor_addr: Option<Addr<App>>,
 }
 
-impl<HA: HostAdapter> Default for Host<HA> {
+impl Default for Host {
     fn default() -> Self {
         executor::block_on(async move {
             let db_conn = Connection::open("./seda_db.db3").await.expect("Couldn't open db conn");
@@ -67,10 +66,10 @@ impl<HA: HostAdapter> Default for Host<HA> {
     }
 }
 
-impl<HA: HostAdapter> Actor for Host<HA> {
+impl Actor for Host {
     type Context = Context<Self>;
 }
 
-impl<HA: HostAdapter> actix::Supervised for Host<HA> {}
+impl actix::Supervised for Host {}
 
-impl<HA: HostAdapter> SystemService for Host<HA> {}
+impl SystemService for Host {}

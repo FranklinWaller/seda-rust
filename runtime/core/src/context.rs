@@ -7,16 +7,14 @@ use tokio::sync::mpsc::Sender;
 use wasmer::{AsStoreRef, FunctionEnv, Memory, MemoryView, Store};
 use wasmer_wasix::WasiEnv;
 
-use crate::{HostAdapter, InMemory};
+use crate::InMemory;
 
 #[derive(Clone)]
-pub struct VmContext<HA: HostAdapter> {
+pub struct VmContext {
     pub result:                     Arc<Mutex<Vec<u8>>>,
     pub memory:                     Option<Memory>,
-    pub memory_adapter:             Arc<Mutex<InMemory>>,
     pub shared_memory:              Arc<RwLock<InMemory>>,
     pub wasi_env:                   FunctionEnv<WasiEnv>,
-    pub adapter:                    HA,
     pub node_config:                NodeConfig,
     pub p2p_command_sender_channel: Sender<P2PCommand>,
 
@@ -31,26 +29,22 @@ pub struct VmContext<HA: HostAdapter> {
     pub call_result_value: Arc<RwLock<Vec<u8>>>,
 }
 
-impl<HA: HostAdapter> VmContext<HA> {
+impl VmContext {
     #[allow(clippy::too_many_arguments)]
     pub fn create_vm_context(
         store: &mut Store,
-        memory_adapter: Arc<Mutex<InMemory>>,
         shared_memory: Arc<RwLock<InMemory>>,
         wasi_env: FunctionEnv<WasiEnv>,
-        adapter: HA,
         p2p_command_sender_channel: Sender<P2PCommand>,
         node_config: NodeConfig,
-    ) -> FunctionEnv<VmContext<HA>> {
+    ) -> FunctionEnv<VmContext> {
         FunctionEnv::new(
             store,
             VmContext {
                 result: Arc::new(Mutex::new(Vec::new())),
-                memory_adapter,
                 shared_memory,
                 memory: None,
                 wasi_env,
-                adapter,
                 call_result_value: Arc::new(RwLock::new(Vec::new())),
                 p2p_command_sender_channel,
                 node_config,

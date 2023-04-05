@@ -4,7 +4,7 @@ use actix::prelude::*;
 use parking_lot::RwLock;
 use seda_config::{ChainConfigs, NodeConfig};
 use seda_p2p::DiscoveryStatus;
-use seda_runtime::{HostAdapter, InMemory};
+use seda_runtime::InMemory;
 use seda_runtime_sdk::{events::EventId, p2p::P2PCommand};
 use tokio::sync::mpsc::Sender;
 use tracing::info;
@@ -21,15 +21,15 @@ pub mod p2p_message_handler;
 mod shutdown;
 pub use shutdown::Shutdown;
 // Node Actor definition
-pub struct App<HA: HostAdapter> {
+pub struct App {
     pub event_queue:       Arc<RwLock<EventQueue>>,
     pub running_event_ids: Arc<RwLock<Vec<EventId>>>,
-    pub runtime_worker:    Addr<RuntimeWorker<HA>>,
+    pub runtime_worker:    Addr<RuntimeWorker>,
     pub rpc_server:        JsonRpcServer,
     pub shared_memory:     Arc<RwLock<InMemory>>,
 }
 
-impl<HA: HostAdapter> App<HA> {
+impl App {
     pub async fn new(
         node_config: NodeConfig,
         rpc_server_address: &str,
@@ -45,7 +45,7 @@ impl<HA: HostAdapter> App<HA> {
         // Hack to get around Copy requirement for move closure.
         let sm_clone = shared_memory.clone();
         let runtime_worker = SyncArbiter::start(node_config.runtime_worker_threads, move || RuntimeWorker {
-            runtime:                    None,
+            runtime_context:            None,
             node_config:                node_config.clone(),
             chain_configs:              chain_configs.clone(),
             p2p_command_sender_channel: p2p_command_sender_channel_clone.clone(),
@@ -71,7 +71,7 @@ impl<HA: HostAdapter> App<HA> {
     }
 }
 
-impl<HA: HostAdapter> Actor for App<HA> {
+impl Actor for App {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {

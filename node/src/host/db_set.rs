@@ -1,6 +1,5 @@
 use actix::prelude::*;
 use rusqlite::params;
-use seda_runtime::HostAdapter;
 use serde::{Deserialize, Serialize};
 
 use crate::{Host, NodeError, Result};
@@ -12,7 +11,7 @@ pub struct DatabaseSet {
     pub value: String,
 }
 
-impl<HA: HostAdapter> Handler<DatabaseSet> for Host<HA> {
+impl Handler<DatabaseSet> for Host {
     type Result = ResponseActFuture<Self, Result<()>>;
 
     fn handle(&mut self, msg: DatabaseSet, _ctx: &mut Self::Context) -> Self::Result {

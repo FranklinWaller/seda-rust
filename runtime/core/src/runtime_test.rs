@@ -8,7 +8,15 @@ use seda_runtime_sdk::p2p::P2PCommand;
 use serde_json::json;
 use tokio::{runtime, sync::mpsc};
 
-use crate::{test::RuntimeTestAdapter, InMemory, MemoryAdapter, Runtime, VmConfig};
+use crate::{
+    start_runtime,
+    test::RuntimeTestAdapter,
+    HostAdapter,
+    InMemory,
+    MemoryAdapter,
+    RuntimeContext,
+    VmCallData,
+};
 
 const TEST_MASTER_KEY: &str = "07bc2bbe42d68a80146c873963db1ac5801c7bd79221033b4ccc23cb70a09b28";
 
@@ -42,33 +50,34 @@ pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
     rt.block_on(future)
 }
 
+fn create_runtime_context(wasm_binary: Vec<u8>, shared_memory: Arc<RwLock<InMemory>>) -> RuntimeContext {
+    let node_config = NodeConfigInner::test_config(Some(master_key()));
+
+    let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
+
+    RuntimeContext::new(node_config, wasm_binary, shared_memory, p2p_command_sender).unwrap()
+}
+
+fn create_host_adapter() -> RuntimeTestAdapter {
+    RuntimeTestAdapter::new(ChainConfigsInner::test_config()).unwrap()
+}
+
 #[test]
 fn test_promise_queue_multiple_calls_with_external_traits() {
     set_env_vars();
-    let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config(Some(master_key()));
-    let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
-    let mut runtime = Runtime::<RuntimeTestAdapter>::new(
-        node_config,
-        ChainConfigsInner::test_config(),
-        shared_memory.clone(),
-        false,
-    )
-    .unwrap();
+    let mut context = create_runtime_context(wasm_binary, shared_memory.clone());
 
-    runtime.init(wasm_binary).unwrap();
-
-    let vm_result = runtime.start_runtime(
-        VmConfig {
+    let vm_result = start_runtime(
+        &VmCallData {
             args:         vec!["hello world".to_string()],
             program_name: "consensus".to_string(),
             start_func:   None,
             debug:        true,
         },
-        memory_adapter,
-        p2p_command_sender,
+        &mut context,
+        create_host_adapter(),
     );
 
     assert_eq!(vm_result.exit_info.exit_code, 0);
@@ -84,36 +93,28 @@ fn test_promise_queue_multiple_calls_with_external_traits() {
 fn test_bad_wasm_file() {
     set_env_vars();
 
-    let node_config = NodeConfigInner::test_config(Some(master_key()));
-    let mut runtime =
-        Runtime::<RuntimeTestAdapter>::new(node_config, ChainConfigsInner::test_config(), shared_memory(), false)
-            .unwrap();
-
-    runtime.init(vec![203]).unwrap();
+    let wasm_binary = vec![203];
+    let shared_memory = shared_memory();
+    create_runtime_context(wasm_binary, shared_memory);
 }
 
 #[test]
 fn test_non_existing_function() {
     set_env_vars();
-    let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config(Some(master_key()));
-    let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
-    let mut runtime =
-        Runtime::<RuntimeTestAdapter>::new(node_config, ChainConfigsInner::test_config(), shared_memory, false)
-            .unwrap();
-    runtime.init(wasm_binary).unwrap();
+    let mut context = create_runtime_context(wasm_binary, shared_memory);
+    let host_adapter = create_host_adapter();
 
-    let runtime_execution_result = runtime.start_runtime(
-        VmConfig {
+    let runtime_execution_result = start_runtime(
+        &VmCallData {
             args:         vec!["hello world".to_string()],
             program_name: "consensus".to_string(),
             start_func:   Some("non_existing_function".to_string()),
             debug:        true,
         },
-        memory_adapter,
-        p2p_command_sender,
+        &mut context,
+        host_adapter,
     );
 
     dbg!(&runtime_execution_result);
@@ -125,30 +126,20 @@ fn test_non_existing_function() {
 fn test_promise_queue_http_fetch() {
     set_env_vars();
     let fetch_url = "https://swapi.dev/api/planets/1/".to_string();
-    let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
-
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config(Some(master_key()));
-    let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
-    let mut runtime = Runtime::<RuntimeTestAdapter>::new(
-        node_config,
-        ChainConfigsInner::test_config(),
-        shared_memory.clone(),
-        false,
-    )
-    .unwrap();
-    runtime.init(wasm_binary).unwrap();
+    let host_adapter = create_host_adapter();
+    let mut context = create_runtime_context(wasm_binary, shared_memory.clone());
 
-    let runtime_execution_result = runtime.start_runtime(
-        VmConfig {
+    let runtime_execution_result = start_runtime(
+        &VmCallData {
             args:         vec![fetch_url.clone()],
             program_name: "consensus".to_string(),
             start_func:   Some("http_fetch_test".to_string()),
             debug:        true,
         },
-        memory_adapter,
-        p2p_command_sender,
+        &mut context,
+        host_adapter,
     );
 
     assert_eq!(runtime_execution_result.exit_info.exit_code, 0);
@@ -174,26 +165,17 @@ fn test_promise_queue_http_fetch() {
 #[should_panic(expected = "not implemented")]
 fn test_cli_demo_view_another_chain() {
     set_env_vars();
-    let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
     let wasm_binary = read_wasm_target("demo-cli");
-    let node_config = NodeConfigInner::test_config(Some(master_key()));
-    let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
-    let mut runtime = Runtime::<RuntimeTestAdapter>::new(
-        node_config,
-        ChainConfigsInner::test_config(),
-        shared_memory.clone(),
-        false,
-    )
-    .unwrap();
+    let host_adapter = create_host_adapter();
+    let mut context = create_runtime_context(wasm_binary, shared_memory.clone());
 
-    runtime.init(wasm_binary).unwrap();
     let contract_id = "mc.mennat0.testnet".to_string();
     let method_name = "get_node_socket_address".to_string();
     let args = json!({"node_id": "12".to_string()}).to_string();
 
-    let runtime_execution_result = runtime.start_runtime(
-        VmConfig {
+    let runtime_execution_result = start_runtime(
+        &VmCallData {
             args:         vec![
                 "view".to_string(),
                 "another".to_string(),
@@ -205,8 +187,8 @@ fn test_cli_demo_view_another_chain() {
             start_func:   None,
             debug:        true,
         },
-        memory_adapter,
-        p2p_command_sender,
+        &mut context,
+        host_adapter,
     );
     assert_eq!(runtime_execution_result.exit_info.exit_code, 0);
     let mem = shared_memory.read();
@@ -234,7 +216,7 @@ fn test_cli_demo_view_another_chain() {
 //     runtime.init(wasm_binary).unwrap();
 
 //     let runtime_execution_result = runtime.start_runtime(
-//         VmConfig {
+//         VmCallData {
 //             args:         vec![],
 //             program_name: "consensus".to_string(),
 //             start_func:   Some("test_limited_runtime".to_string()),
@@ -278,7 +260,7 @@ fn test_cli_demo_view_another_chain() {
 
 //     let runtime_execution_result = runtime
 //         .start_runtime(
-//             VmConfig {
+//             VmCallData {
 //                 args:         vec!["view".to_string(), "near".to_string(),
 // contract_id, method_name, args],                 program_name:
 // "consensus".to_string(),                 start_func:   None,
@@ -299,20 +281,11 @@ fn test_cli_demo_view_another_chain() {
 #[test]
 fn test_bn254_verify_valid() {
     set_env_vars();
-    let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
 
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config(Some(master_key()));
-    let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
-    let mut runtime = Runtime::<RuntimeTestAdapter>::new(
-        node_config,
-        ChainConfigsInner::test_config(),
-        shared_memory.clone(),
-        false,
-    )
-    .unwrap();
-    runtime.init(wasm_binary).unwrap();
+    let host_adapter = create_host_adapter();
+    let mut context = create_runtime_context(wasm_binary, shared_memory.clone());
     let sig = hex::encode(
         Signature::from_compressed(
             hex::decode("020f047a153e94b5f109e4013d1bd078112817cf0d58cdf6ba8891f9849852ba5b").unwrap(),
@@ -337,8 +310,8 @@ fn test_bn254_verify_valid() {
             start_func:   Some("bn254_verify_test".to_string()),
             debug:        true,
         },
-        memory_adapter,
-        p2p_command_sender,
+        &mut context,
+        host_adapter,
     );
 
     assert_eq!(runtime_execution_result.exit_info.exit_code, 0);
@@ -356,20 +329,11 @@ fn test_bn254_verify_valid() {
 #[test]
 fn test_bn254_verify_invalid() {
     set_env_vars();
-    let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
-
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config(Some(master_key()));
-    let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
-    let mut runtime = Runtime::<RuntimeTestAdapter>::new(
-        node_config,
-        ChainConfigsInner::test_config(),
-        shared_memory.clone(),
-        false,
-    )
-    .unwrap();
-    runtime.init(wasm_binary).unwrap();
+    let host_adapter = create_host_adapter();
+    let mut context = create_runtime_context(wasm_binary, shared_memory.clone());
+
     let sig = hex::encode(
         Signature::from_compressed(
             hex::decode("020f047a153e94b5f109e4013d1bd078112817cf0d58cdf6ba8891f9849852ba5c").unwrap(),
@@ -379,8 +343,9 @@ fn test_bn254_verify_invalid() {
         .unwrap(),
     );
     let pk = hex::encode(PublicKey::from_compressed(hex::decode("0b0087beab84f1aeacf30597cda920c6772ecd26ba95d84f66750a16dc9b68cea6d89173eff7f72817e4698f93fcb5a5b04b272a7085d8a12fceb5481e651df7a7").unwrap()).unwrap().to_uncompressed().unwrap());
-    let runtime_execution_result = runtime.start_runtime(
-        VmConfig {
+
+    let runtime_execution_result = start_runtime(
+        &VmCallData {
             args:         vec![
                 // Message ("sample" in ASCII)
                 "73616d706c65".to_string(),
@@ -393,8 +358,8 @@ fn test_bn254_verify_invalid() {
             start_func:   Some("bn254_verify_test".to_string()),
             debug:        true,
         },
-        memory_adapter,
-        p2p_command_sender,
+        &mut context,
+        host_adapter,
     );
 
     assert_eq!(runtime_execution_result.exit_info.exit_code, 0);
@@ -411,23 +376,13 @@ fn test_bn254_verify_invalid() {
 #[test]
 fn test_bn254_signature() {
     set_env_vars();
-    let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
-
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config(Some(master_key()));
-    let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
-    let mut runtime = Runtime::<RuntimeTestAdapter>::new(
-        node_config,
-        ChainConfigsInner::test_config(),
-        shared_memory.clone(),
-        false,
-    )
-    .unwrap();
-    runtime.init(wasm_binary).unwrap();
+    let host_adapter = create_host_adapter();
+    let mut context = create_runtime_context(wasm_binary, shared_memory.clone());
 
-    let runtime_execution_result = runtime.start_runtime(
-        VmConfig {
+    let runtime_execution_result = start_runtime(
+        &VmCallData {
             args:         vec![
                 // Message ("sample" in ASCII)
                 "73616d706c65".to_string(),
@@ -438,8 +393,8 @@ fn test_bn254_signature() {
             start_func:   Some("bn254_sign_test".to_string()),
             debug:        true,
         },
-        memory_adapter,
-        p2p_command_sender,
+        &mut context,
+        host_adapter,
     );
 
     assert_eq!(runtime_execution_result.exit_info.exit_code, 0);
@@ -465,30 +420,20 @@ fn test_bn254_signature() {
 #[test]
 fn test_error_turns_into_rejection() {
     set_env_vars();
-    let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config(Some(master_key()));
-    let memory_adapter = memory_adapter();
     let shared_memory = shared_memory();
-    let mut runtime = Runtime::<RuntimeTestAdapter>::new(
-        node_config,
-        ChainConfigsInner::test_config(),
-        shared_memory.clone(),
-        false,
-    )
-    .unwrap();
+    let host_adapter = create_host_adapter();
+    let mut context = create_runtime_context(wasm_binary, shared_memory.clone());
 
-    runtime.init(wasm_binary).unwrap();
-
-    let runtime_execution_result = runtime.start_runtime(
-        VmConfig {
+    let runtime_execution_result = start_runtime(
+        &VmCallData {
             args:         vec![],
             program_name: "consensus".to_string(),
             start_func:   Some("test_error_turns_into_rejection".to_string()),
             debug:        true,
         },
-        memory_adapter,
-        p2p_command_sender,
+        &mut context,
+        host_adapter,
     );
 
     let vm_result = runtime_execution_result;
@@ -510,51 +455,35 @@ fn test_error_turns_into_rejection() {
 #[test]
 fn test_shared_memory() {
     set_env_vars();
-    let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
     let wasm_binary = read_wasm_target("promise-wasm-bin");
-    let node_config = NodeConfigInner::test_config(Some(master_key()));
     let shared_memory = shared_memory();
-    let mut runtime = Runtime::<RuntimeTestAdapter>::new(
-        node_config.clone(),
-        ChainConfigsInner::test_config(),
-        shared_memory.clone(),
-        false,
-    )
-    .unwrap();
+    let host_adapter = create_host_adapter();
+    let mut context = create_runtime_context(wasm_binary, shared_memory);
 
-    runtime.init(wasm_binary.clone()).unwrap();
-
-    let runtime_execution_result = runtime.start_runtime(
-        VmConfig {
+    let runtime_execution_result = start_runtime(
+        &VmCallData {
             args:         vec![],
             program_name: "consensus".to_string(),
             start_func:   Some("shared_memory_test".to_string()),
             debug:        true,
         },
-        memory_adapter(),
-        p2p_command_sender,
+        &mut context,
+        host_adapter.clone(),
     );
 
     let vm_result = runtime_execution_result;
     dbg!(&vm_result);
     assert_eq!(vm_result.exit_info.exit_code, 0);
 
-    let mut runtime =
-        Runtime::<RuntimeTestAdapter>::new(node_config, ChainConfigsInner::test_config(), shared_memory, false)
-            .unwrap();
-
-    runtime.init(wasm_binary).unwrap();
-
-    let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
-    let runtime_execution_result = runtime.start_runtime(
-        VmConfig {
+    let runtime_execution_result = start_runtime(
+        &VmCallData {
             args:         vec![],
             program_name: "consensus".to_string(),
             start_func:   Some("shared_memory_success".to_string()),
             debug:        true,
         },
-        memory_adapter(),
-        p2p_command_sender,
+        &mut context,
+        host_adapter,
     );
 
     let vm_result = runtime_execution_result;

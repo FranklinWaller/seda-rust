@@ -2,7 +2,6 @@
 //! We send a message to trigger an event to the host actor
 //! which redirects the message to the app actor
 use actix::prelude::*;
-use seda_runtime::HostAdapter;
 use seda_runtime_sdk::events::Event;
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +13,7 @@ pub struct TriggerEvent {
     pub event: Event,
 }
 
-impl<HA: HostAdapter> Handler<TriggerEvent> for Host<HA> {
+impl Handler<TriggerEvent> for Host {
     type Result = Result<()>;
 
     fn handle(&mut self, msg: TriggerEvent, _ctx: &mut Self::Context) -> Self::Result {

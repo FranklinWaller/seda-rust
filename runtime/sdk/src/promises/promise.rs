@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 
 use serde::{Deserialize, Serialize};
-use serde_json;
 
 use super::PromiseAction;
 use crate::ToBytes;

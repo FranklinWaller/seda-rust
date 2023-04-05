@@ -40,7 +40,7 @@ pub fn run(seda_server_address: &str, config: NodeConfig, p2p_config: P2PConfig,
         let discovery_status = Arc::new(RwLock::new(DiscoveryStatusInner::new(p2p_config.clone(), known_peers)));
 
         // TODO: add number of workers as config with default value
-        let app = App::<RuntimeAdapter>::new(
+        let app = App::new(
             config.clone(),
             seda_server_address,
             chain_configs,

@@ -1,7 +1,6 @@
 use actix::prelude::*;
 use seda_chains::{chain, Client};
 use seda_config::{ChainConfigs, NodeConfig};
-use seda_runtime::HostAdapter;
 use seda_runtime_sdk::Chain;
 
 use crate::{Host, Result};
@@ -44,7 +43,7 @@ impl ChainCall {
     }
 }
 
-impl<HA: HostAdapter> Handler<ChainCall> for Host<HA> {
+impl Handler<ChainCall> for Host {
     type Result = ResponseActFuture<Self, Result<Vec<u8>>>;
 
     fn handle(&mut self, msg: ChainCall, _ctx: &mut Self::Context) -> Self::Result {
