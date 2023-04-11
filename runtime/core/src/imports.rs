@@ -214,7 +214,7 @@ pub fn bn254_sign_import_obj(store: &mut Store, vm_context: &FunctionEnv<VmConte
         let message = message.slice(&memory, message_length as u32)?.read_to_vec()?;
 
         // `bn254` sign
-        let signature = bn254::ECDSA::sign(&message, &env.node_config.keypair_bn254.private_key)?;
+        let signature = bn254::ECDSA::sign(&message, &ctx.node_config.keypair_bn254.private_key)?;
         let result = signature.to_uncompressed()?;
 
         if result_data_length as usize != result.len() {

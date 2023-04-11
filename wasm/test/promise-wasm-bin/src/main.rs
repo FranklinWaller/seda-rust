@@ -1,4 +1,4 @@
-use std::{env, num::ParseIntError};
+use std::{env, fmt::Write, num::ParseIntError};
 
 use seda_runtime_sdk::{
     wasm::{
@@ -96,8 +96,7 @@ fn bn254_sign_test() {
     let _private_key = Bn254PrivateKey::try_from(private_key_bytes.as_slice()).unwrap();
 
     let result = bn254_sign(&message);
-    let result_hex = encode_hex(&result.to_uncompressed().unwrap());
-    db_set("bn254_sign_result", &result_hex).start();
+    shared_memory_set("bn254_sign_result", result.to_uncompressed().unwrap());
 }
 
 // TODO: Something to include in our SDK? Or bn254 lib. Or use hex crate.

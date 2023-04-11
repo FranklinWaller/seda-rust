@@ -37,13 +37,12 @@ impl Actor for RuntimeWorker {
     type Context = SyncContext<Self>;
 
     fn started(&mut self, _ctx: &mut Self::Context) {
-        let node_config = self.node_config.clone();
         let shared_memory = self.shared_memory.clone();
         // TODO: when conditionally loading the consensus binary see if it allows full
         // or limited features
         let runtime_context = RuntimeContext::new(
-            node_config,
-            fs::read(path_prefix).unwrap(),
+            self.node_config.clone(),
+            fs::read(&self.node_config.consensus_wasm_path).unwrap(),
             shared_memory,
             self.p2p_command_sender_channel.clone(),
         )

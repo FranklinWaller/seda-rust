@@ -296,8 +296,8 @@ fn test_bn254_verify_valid() {
     );
     let pk = hex::encode(PublicKey::from_compressed(hex::decode("0b0087beab84f1aeacf30597cda920c6772ecd26ba95d84f66750a16dc9b68cea6d89173eff7f72817e4698f93fcb5a5b04b272a7085d8a12fceb5481e651df7a7").unwrap()).unwrap().to_uncompressed().unwrap());
 
-    let runtime_execution_result = runtime.start_runtime(
-        VmConfig {
+    let runtime_execution_result = start_runtime(
+        &VmCallData {
             args:         vec![
                 // Message ("sample" in ASCII)
                 "73616d706c65".to_string(),
@@ -405,6 +405,7 @@ fn test_bn254_signature() {
     // Fetch bn254 sign result from DB
     assert!(result.is_some());
 
+    let result_sig = hex::encode(result.unwrap());
     // Check if expected signature
     let expected_signature = hex::encode(
         Signature::from_compressed(
@@ -414,7 +415,8 @@ fn test_bn254_signature() {
         .to_uncompressed()
         .unwrap(),
     );
-    assert_eq!(result, expected_signature);
+
+    assert_eq!(result_sig, expected_signature);
 }
 
 #[test]
