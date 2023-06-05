@@ -23,6 +23,12 @@ pub use storage::*;
 mod vm_result;
 pub use vm_result::*;
 
+mod runtime_context;
+pub use runtime_context::*;
+
+mod vm_import_types;
+pub use vm_import_types::*;
+
 #[cfg(test)]
 #[path = ""]
 mod test {

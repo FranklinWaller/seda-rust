@@ -9,6 +9,7 @@ async-trait = { workspace = true }
 bn254 = { workspace = true }
 futures = { workspace = true, features = ["executor"] }
 hex = { workspace = true }
+lazy_static = { workspace = true }
 parking_lot = { workspace = true }
 reqwest = { workspace = true }
 seda-chains = { workspace = true }
@@ -25,7 +26,6 @@ wasmer-wasix = { workspace = true }
 
 
 [dev-dependencies]
-lazy_static = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 seda-crypto = { workspace = true }

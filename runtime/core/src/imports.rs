@@ -11,11 +11,11 @@ use seda_runtime_sdk::{
     PromiseStatus,
     TriggerEventAction,
 };
-use wasmer::{imports, Function, FunctionEnv, FunctionEnvMut, Imports, Module, Store, WasmPtr};
-use wasmer_wasix::WasiFunctionEnv;
+use wasmer::{imports, Exports, Function, FunctionEnv, FunctionEnvMut, Imports, Module, Store, WasmPtr};
+use wasmer_wasix::{get_wasi_version, WasiFunctionEnv};
 
 use super::{Result, VmContext};
-use crate::{HostAdapter, MemoryAdapter};
+use crate::{AllowedImports, HostAdapter, MemoryAdapter};
 
 /// Reads the value from memory as byte array to the wasm result pointer.
 pub fn shared_memory_read_import_obj(store: &mut Store, vm_context: &FunctionEnv<VmContext>) -> Function {
@@ -476,14 +476,18 @@ pub fn call_result_value_write_import_obj(store: &mut Store, vm_context: &Functi
     Function::new_typed_with_env(store, vm_context, call_result_value)
 }
 
-// Creates the WASM function imports with the stringed names.
+/// Creates the WASM function imports with the stringed names.
+/// Only imports that are specified with AllowedImports are attached to the
+/// module See ./vm_import_types.rs which one are allowed for which runtime
 pub fn create_wasm_imports(
     store: &mut Store,
     vm_context: FunctionEnv<VmContext>,
+    allowed_imports: AllowedImports,
     wasi_env: &mut WasiFunctionEnv,
     wasm_module: &Module,
     host_adapter: impl HostAdapter,
 ) -> Result<Imports> {
+    let wasi_import_obj = wasi_env.import_object(store, wasm_module)?;
     let host_import_obj = imports! {
         "env" => {
             "shared_memory_contains_key" => shared_memory_contains_key_import_obj(store, &vm_context),
@@ -506,13 +510,35 @@ pub fn create_wasm_imports(
         }
     };
 
-    // Combining the WASI exports with our custom (host) imports
-    let mut wasi_import_obj = wasi_env.import_object(store, wasm_module)?;
-    let host_exports = host_import_obj
-        .get_namespace_exports("env")
-        .ok_or("VM could not get env namespace")?;
+    let wasi_version = get_wasi_version(wasm_module, false);
+    let mut final_env_exports = Exports::new();
+    let mut final_wasi_exports = Exports::new();
 
-    wasi_import_obj.register_namespace("env", host_exports);
+    dbg!(&wasi_version);
 
-    Ok(wasi_import_obj)
+    for allowed_import in allowed_imports.iter() {
+        // "env" is all our custom SEDA imports
+        if let Some(found_export) = host_import_obj.get_export("env", allowed_import) {
+            final_env_exports.insert(allowed_import, found_export);
+        } else if let Some(wasi_version) = wasi_version {
+            // When we couldn't find a match in our custom import we try WASI imports
+            // WASI has different versions of compatibility so it depends how the WASM was
+            // build, that's why we use wasi_verison to determine the correct export
+            if let Some(found_export) = wasi_import_obj.get_export(wasi_version.get_namespace_str(), allowed_import) {
+                final_wasi_exports.insert(allowed_import, found_export);
+            }
+        }
+    }
+
+    dbg!(&final_wasi_exports);
+
+    let mut final_imports = Imports::new();
+    final_imports.register_namespace("env", final_env_exports);
+
+    if let Some(wasi_version) = wasi_version {
+        final_imports.register_namespace(wasi_version.get_namespace_str(), final_wasi_exports);
+    }
+
+    // When no import restriction is given we allow all WASI/Runtime imports
+    Ok(final_imports)
 }

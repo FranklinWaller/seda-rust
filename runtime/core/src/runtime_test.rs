@@ -1,6 +1,6 @@
 use std::{env, fs, path::PathBuf, sync::Arc};
 
-use bn254::{PrivateKey, PublicKey, Signature, ECDSA};
+use bn254::{PublicKey, Signature};
 use parking_lot::{Mutex, RwLock};
 use seda_config::{ChainConfigsInner, NodeConfigInner};
 use seda_crypto::MasterKey;
@@ -55,7 +55,7 @@ fn create_runtime_context(wasm_binary: Vec<u8>, shared_memory: Arc<RwLock<InMemo
 
     let (p2p_command_sender, _p2p_command_receiver) = mpsc::channel::<P2PCommand>(100);
 
-    RuntimeContext::new(node_config, wasm_binary, shared_memory, p2p_command_sender).unwrap()
+    RuntimeContext::new(node_config, wasm_binary, shared_memory, p2p_command_sender, None).unwrap()
 }
 
 fn create_host_adapter() -> RuntimeTestAdapter {

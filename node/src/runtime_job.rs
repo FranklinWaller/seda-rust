@@ -3,7 +3,7 @@ use std::{fs, sync::Arc};
 use actix::{prelude::*, Handler, Message};
 use parking_lot::RwLock;
 use seda_config::{ChainConfigs, NodeConfig};
-use seda_runtime::{start_runtime, HostAdapter, InMemory, Result, RuntimeContext, VmCallData, VmResult};
+use seda_runtime::{start_runtime, HostAdapter, InMemory, Result, RuntimeContext, VmCallData, VmResult, CORE_IMPORTS};
 use seda_runtime_sdk::{
     events::{Event, EventData},
     p2p::P2PCommand,
@@ -45,6 +45,7 @@ impl Actor for RuntimeWorker {
             fs::read(&self.node_config.consensus_wasm_path).unwrap(),
             shared_memory,
             self.p2p_command_sender_channel.clone(),
+            Some(CORE_IMPORTS.to_vec()),
         )
         .unwrap();
 
